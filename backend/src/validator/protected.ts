@@ -1,5 +1,12 @@
 import z from "zod";
 import WorkerAssignment from "../model/WorkerAssignment";
+import { parseDagupanLocation } from "../data/dagupan";
+
+// Jobs and workers must be located in a Dagupan City barangay (see data/dagupan.ts).
+const DagupanLocation = z
+  .string("Location must be a string")
+  .max(150, "Location shouldn't exceed 150 characters")
+  .refine((l) => parseDagupanLocation(l) !== null, "Location must be a barangay in Dagupan City, Pangasinan")
 
 // [These are the validators used for both workers & employers]:
 // [GET Requests]
@@ -14,7 +21,7 @@ export const JobSchema = z.object({
           .regex(/^[A-Za-z ]+$/, "Job Title must only contain letters and spaces."),
   company: z.string("Company must be a string"),
   posted: z.string("Posted By must be the string of the user ID"),
-  location: z.string("Location must be a string"),
+  location: DagupanLocation,
   type: z.enum(["Part-Time", "Full-Time", "Contract", "Temporary", "Intern"], "Type must be Part-Time | Full-Time").optional(),
   salary: z.string("Salary must be a string"),
   description: z
@@ -253,7 +260,7 @@ export const UpdateWorkerSchema = z.object({
   _id: z.string("_id must be a string"),
   name: z.string("Name must be a string").min(3, "Name must have at least 3 characters").max(50, "Name must not exceed 50 characters").regex(/^[A-Za-z0-9 ]*$/, "Name must only include letters, digits, and spaces"), // https://www.servicenow.com/community/itsm-forum/allow-only-alphanumeric-values-and-special-characters/td-p/712231 // https://www.servicenow.com/community/itsm-forum/allow-only-alphanumeric-values-and-special-characters/td-p/712231
   phoneNumber: z.string("Phone must be a valid phone number").regex(/^(\+639)\d{9}$/, "Please enter a valid phone number, ex. +639..."),
-  location: z.string("Location must be a string"),
+  location: DagupanLocation,
   jobTitle: z.string("Title must be string"),
   yearsOfExperience: z.string("Experience must be a string").regex(/^[A-Za-z0-9' ]*$/, "Experience must only include letters, digits, and spaces").optional(),
   about_me: z.string("About Me must be a string"),

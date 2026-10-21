@@ -24,6 +24,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import DagupanLocationPicker from "@/components/DagupanLocationPicker";
 
 axios.defaults.withCredentials = true
 
@@ -47,7 +48,7 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
     yearsOfExperience: "5 years",
     about_me: "Experienced construction worker with expertise in commercial and residential projects. Skilled in operating heavy machinery, reading blueprints, and working with various materials.",
     availability: "full-time",
-    expected_salary: "$20-30/hr",
+    expected_salary: "₱600-900/day",
   });
 
   const JOB_TITLES = [
@@ -101,37 +102,6 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
     "General Contractor",
   ];
 
-  
-  const [mapQuery, setMapQuery] = useState("");
-
-  const [mapUrl, setMapUrl] = useState(
-    "https://maps.google.com/maps?q=16.167700,120.426300&z=18&output=embed"
-  );
-
-
-  const handleLocationSearch = async () => {
-    if (!mapQuery.trim()) return;
-
-    const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-      mapQuery
-    )}`;
-
-    const res = await fetch(geocodeUrl);
-    const data = await res.json();
-
-    if (!data.length) return;
-
-    const { lat, lon, display_name } = data[0];
-
-    setMapUrl(
-      `https://maps.google.com/maps?q=${lat},${lon}&z=17&output=embed`
-    );
-
-    setFormData({
-      ...formData,
-      location: display_name,
-    });
-  };
 
   const [skills, setSkills] = useState([
     "Construction",
@@ -192,6 +162,11 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
   if (error) return <div style={styleDisplay}>Error: {error.message}</div>
 
   const UpdateProf = async () => {
+    if (!formData.location) {
+      toast.error("Please select your barangay in Dagupan City.");
+      return;
+    }
+
     try {
 
       const payload = new FormData();
@@ -401,57 +376,16 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
           </div>
 
           {/* Location & Experience */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-3 mb-25">
-              <Label>Location *</Label>
+          <div className="space-y-2">
+            <Label>Location *</Label>
+            <DagupanLocationPicker
+              value={formData.location}
+              onChange={(location) => setFormData((prev) => ({ ...prev, location }))}
+            />
+          </div>
 
-              <div className="flex flex-col gap-3">
-
-                {/* Search bar */}
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Search place, city, barangay, address..."
-                    value={mapQuery}
-                    onChange={(e) => setMapQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleLocationSearch();
-                      }
-                    }}
-                  />
-
-                  <Button type="button" onClick={handleLocationSearch}>
-                    Search
-                  </Button>
-                </div>
-
-                {/* Map */}
-                <div
-                  className="ratio ratio-4x3"
-                  style={{ maxWidth: "500px", height: "300px", marginBottom: "120px" }}
-                >
-                  <iframe
-                    src={mapUrl}
-                    style={{
-                      border: 0,
-                      borderRadius: "12px",
-                      width: "100%",
-                      height: "100%",
-                    }}
-                    allowFullScreen
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                    title="Google Map"                                          className="mb-2"
-                  />
-                  <div>
-                    <strong>Location:</strong> {formData.location}
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
+          {/* Experience, Availability & Salary */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="yearsOfExperience">Years of Experience</Label>
               <Input
@@ -481,10 +415,6 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          {/* Availability & Salary */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="expected_salary">Expected Salary</Label>
               <Input
@@ -492,7 +422,7 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
                 name="expected_salary"
                 value={formData.expected_salary === "N/A" ? "" : formData.expected_salary}
                 onChange={handleChange}
-                placeholder="e.g., $20-30/hr"
+                placeholder="e.g., ₱600/day"
               />
             </div>
           </div>

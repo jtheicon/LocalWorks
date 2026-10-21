@@ -20,7 +20,7 @@ import {
   Mail,
   Phone,
   MapPin,
-  DollarSign,
+  PhilippinePeso,
   Eye,
 } from "lucide-react";
 import { Job } from "@/lib/jobsStore";

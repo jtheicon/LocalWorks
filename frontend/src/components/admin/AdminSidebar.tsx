@@ -59,10 +59,11 @@ const AdminSidebar = ({ activeTab, onTabChange }: AdminSidebarProps) => {
               key={item.id}
               variant="ghost"
               onClick={() => onTabChange(item.id)}
-              className={`w-full justify-start gap-3 h-10 text-sm font-medium transition-all ${
+              aria-current={isActive ? "page" : undefined}
+              className={`relative w-full justify-start gap-3 h-10 text-sm font-medium transition-all ${
                 isActive
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground shadow-md"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground shadow-md before:absolute before:-left-3 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r before:bg-primary"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:translate-x-0.5"
               }`}
             >
               <item.icon className="w-4 h-4" />

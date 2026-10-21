@@ -22,7 +22,7 @@ const WorkerProfile = ({ onEdit }: WorkerProfileProps) => {
     bio: "Experienced construction worker with expertise in commercial and residential projects. Skilled in operating heavy machinery, reading blueprints, and working with various materials.",
     skills: ["Construction", "Heavy Machinery", "Blueprint Reading", "Concrete Work", "Carpentry", "Safety Compliance"],
     availability: "Full-time",
-    expectedSalary: "$20-30/hr",
+    expectedSalary: "₱600-900/day",
     appliedJobs: 12,
     interviews: 3,
   };

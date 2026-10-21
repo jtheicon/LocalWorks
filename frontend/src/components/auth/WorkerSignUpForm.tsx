@@ -51,8 +51,8 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
 
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
 
-  const [newDate, setnewDate] = useState(null);
-  const [otpFromEmail, setOtpFromEmail] = useState(null);
+  // Server-issued proof that the email was verified; required by the register endpoint.
+  const [emailToken, setEmailToken] = useState("");
   const [customJobTitle, setCustomJobTitle] = useState("");
   const [customSkillCategory, setCustomSkillCategory] = useState("");
 
@@ -204,17 +204,13 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
     setIsButtonDisabled(true);
 
     try {
-      const res = await axios.get(`http://localhost:8920/api/auth/otp/${formData.email}`)
-
-      setnewDate(res.data.newDate)
-      setOtpFromEmail(res.data.otp)
-
-      console.log(otpFromEmail)
-      console.log(step)
-    } catch (error) {
+      await axios.get(`http://localhost:8920/api/auth/otp/${formData.email}`)
+    } catch (error: any) {
+      setStep("form");
+      setIsButtonDisabled(false);
       toast({
         title: "OTP Failed",
-        description: "Failed to send OTP",
+        description: error?.response?.data?.info || "Failed to send OTP",
         variant: "destructive",
       });
     }
@@ -269,6 +265,8 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
 
       // Required resume
       formDataToSend.append("resume", files.resume);
+
+      formDataToSend.append("emailToken", emailToken);
 
       const response = await axios.post(
         "http://localhost:8920/api/auth/worker/register",
@@ -398,9 +396,9 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
         {step === "otp" && !isEmailVerified && (
           <OTPVerification
             email={formData.email}
-            otpFromEmail={otpFromEmail}
-            newDate={newDate}
-            onVerified={() => {
+            purpose="register"
+            onVerified={(token) => {
+              setEmailToken(token);
               setIsEmailVerified(true);
               setStep("form");
               toast({

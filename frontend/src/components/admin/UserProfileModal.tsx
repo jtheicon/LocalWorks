@@ -2,6 +2,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UserProfile } from "@/lib/usersStore";
+import AIVerificationPanel from "./AIVerificationPanel";
+import CredibilityBadge, { CredibilityBreakdown, useCredibility } from "@/components/CredibilityBadge";
 import { Phone, MapPin, Mail, FileText, Briefcase, User, Calendar } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
@@ -27,6 +29,8 @@ const UTC_Converter = (createdAt) => {
 
 const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) => {
   const queryClient = useQueryClient();
+  const { data: scores = {} } = useCredibility(user?.role ?? "worker", open ? [user?._id] : []);
+  const credibility = user?._id ? scores[user._id] : undefined;
 
   const VerifyWorker = async (worker: string) => {
     try {
@@ -113,7 +117,7 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg">User Profile</DialogTitle>
         </DialogHeader>
@@ -170,6 +174,18 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
               </div>
             </div>
           </div>
+
+          <AIVerificationPanel verification={user.verification} />
+
+          {credibility && (
+            <div className="rounded-lg border border-border p-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-foreground">Credibility score</span>
+                <CredibilityBadge credibility={credibility} subject={user.role === "worker" ? "Worker" : "Employer"} />
+              </div>
+              <CredibilityBreakdown credibility={credibility} />
+            </div>
+          )}
 
           {/* DETAILS (UNCHANGED) */}
           <div className="space-y-3 text-sm">

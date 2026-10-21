@@ -11,7 +11,7 @@ import {
   MapPin, 
   Building2, 
   Clock,
-  DollarSign,
+  PhilippinePeso,
   Briefcase,
   Users,
   Calendar,
@@ -99,7 +99,7 @@ const JobDetailsModal = ({
               {extendedJob.info.location}
             </div>
             <div className="flex items-center gap-1">
-              <DollarSign className="w-4 h-4" />
+              <PhilippinePeso className="w-4 h-4" />
               {extendedJob.info.salary}
             </div>
             <div className="flex items-center gap-1">

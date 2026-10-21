@@ -13,12 +13,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, MapPin, DollarSign, Clock, Building2, Filter, CheckCircle, Eye } from "lucide-react";
+import { Search, MapPin, PhilippinePeso, Clock, Building2, Filter, CheckCircle, Eye } from "lucide-react";
 import { toast } from "sonner";
 import JobDetailsModal from "./JobDetailsModal";
 import { useJobsStore, Job } from "@/lib/jobsStore";
 import axios from "axios";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import CredibilityBadge, { useCredibility } from "@/components/CredibilityBadge";
 axios.defaults.withCredentials = true;
 
 
@@ -47,22 +48,9 @@ const JobListings = () => {
   const [showAllRecommended, setShowAllRecommended] = useState(false);
 
 
-  // Match score:
-  const MATCH_THRESHOLD = 40;
-
-
   // A function for returning the jobs:
   const Jobs = async () => {
     const { data } = await axios.get("http://localhost:8920/api/pro/viewJobs", {
-      withCredentials: true
-    })
-
-    return data
-  }
-
-  // A function for returning the user information:
-  const UserProfile = async () => {
-    const { data } = await axios.get("http://localhost:8920/api/pro/worker/profile", {
       withCredentials: true
     })
 
@@ -81,71 +69,48 @@ const JobListings = () => {
 
 
 
-  // Display user information for job matching based on the user skill:
-  // # ----------------------------------------------------------------------- #
-  // # - The purpose of this useQuery function is to display user info       - #
-  // # ----------------------------------------------------------------------- #
-  const { data: userData, error: userError, isLoading: userLoading } = useQuery({
-    queryKey: ['userQueryKey'],
-    queryFn: UserProfile
-  })
+  // Employer credibility for every listed job (one batched request).
+  const { data: employerScores = {} } = useCredibility(
+    "employer",
+    (data?.jobs || []).map((job: any) => job?.info?.posted?._id)
+  )
 
 
 
   // Load the jobs and user information:
-  if (isLoading || userLoading) return <div>Loading...</div>;
-  if (error || userError) return <div>An error occured</div>;
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>An error occured</div>;
 
   // Store the jobs inside the AllJobs variable:
   const AllJobs = data.jobs
   if (!AllJobs.length) return <div>{data.message}</div>
 
-  // Store the jobs inside the AllJobs variable:
-  const UserInfo = userData?.WorkerProf
+  // Skill match scores come from the server (backend/src/services/jobMatching.ts), which
+  // also matches differently-worded skills and, when enabled, uses AI for synonyms.
+  // matchScore is null when a job lists no skills.
+  const recommendedScore = data.matching?.recommendedScore ?? 50;
+  const aiMatching = data.matching?.ai === "on";
 
+  const enrichedJobs = (AllJobs || []).map(job => ({
+    ...job,
+    matchScore: job.match?.score ?? null,
+    matchedSkills: job.match?.matched || [],
+    missingSkills: job.match?.missing || []
+  }));
 
-  // The remaining code:
-  // # ----------------------------------------------------------------------- #
-  // # -                                                                     - #
-  // # ----------------------------------------------------------------------- #
-  const normalize = (str) =>
-  (str || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ""); // collapse all separators
+  const matchLabel = (job: any) =>
+    job.matchScore === null ? "No skills listed" : `${job.matchScore}% Match`;
 
-  const calculateMatchScore = (userSkills, jobTags) => {
-    const user = (userSkills || []).map(normalize);
-    const required = (jobTags || []).map(normalize);
+  const matchTooltip = (job: any) =>
+    job.matchedSkills.length
+      ? "Matched: " + job.matchedSkills.map((m: any) => m.jobSkill === m.workerSkill ? m.jobSkill : `${m.jobSkill} (your ${m.workerSkill})`).join(", ")
+      : undefined;
 
-    const matched = required.filter(skill => user.includes(skill));
+  const employerScore = (job: any) => employerScores[job?.info?.posted?._id]?.score ?? 0;
 
-    const score = required.length
-      ? (matched.length / required.length) * 100
-      : 0;
-
-    return {
-      score: Math.round(score),
-      matchedSkills: matched,
-      missingSkills: required.filter(skill => !user.includes(skill))
-    };
-  };
-
-  const enrichedJobs = (AllJobs || []).map(job => {
-    const result = calculateMatchScore(
-      userData?.WorkerProf?.skills || [],
-      job?.info?.tags || []
-    );
-
-    return {
-      ...job,
-      matchScore: result.score,
-      matchedSkills: result.matchedSkills,
-      missingSkills: result.missingSkills
-    };
-  });
-
+  // Best skill match first; among equal matches, more credible employers first.
   const sortedJobs = [...enrichedJobs].sort(
-    (a, b) => (b.matchScore || 0) - (a.matchScore || 0)
+    (a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0) || employerScore(b) - employerScore(a)
   );
 
   const filteredJobs = sortedJobs.filter((job: any) => {
@@ -183,7 +148,7 @@ const JobListings = () => {
   });
 
   const recommendedJobs = filteredJobs.filter(
-    (job) => (job.matchScore || 0) >= 50
+    (job) => (job.matchScore ?? 0) >= recommendedScore
   );
 
 
@@ -205,15 +170,10 @@ const JobListings = () => {
   const handleApplyClick = (job: any) => {
     setJobToApply(job);
 
-    const score = job.matchScore || 0;
-
-    if (score >= 70) {
+    // Jobs without listed skills can't be judged, so they skip the warning.
+    if (job.matchScore === null || job.matchScore >= recommendedScore) {
       setConfirmApplyOpen(true);
-    } 
-    else if (score >= MATCH_THRESHOLD) {
-      setConfirmApplyOpen(true);
-    } 
-    else {
+    } else {
       setLowMatchWarningOpen(true);
     }
   };
@@ -354,7 +314,8 @@ const JobListings = () => {
               <div>
                 <h3 className="text-xl font-bold">Recommended For You</h3>
                 <p className="text-sm text-muted-foreground">
-                  Jobs matching your skills above 50%
+                  Jobs matching at least {recommendedScore}% of your skills
+                  {aiMatching && " · AI-assisted matching"}
                 </p>
               </div>
             </div>
@@ -376,10 +337,13 @@ const JobListings = () => {
                           <Building2 className="w-4 h-4" />
                           {job.info.company}
                         </CardDescription>
+                        <div className="mt-2">
+                          <CredibilityBadge credibility={employerScores[job.info.posted?._id]} subject="Employer" />
+                        </div>
                       </div>
 
-                      <Badge>
-                        {job.matchScore}% Match
+                      <Badge title={matchTooltip(job)}>
+                        {matchLabel(job)}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -471,11 +435,14 @@ const JobListings = () => {
                       <Building2 className="w-4 h-4" />
                       {job.info.company}
                     </CardDescription>
+                    <div className="mt-2">
+                      <CredibilityBadge credibility={employerScores[job.info.posted?._id]} subject="Employer" />
+                    </div>
                   </div>
 
                   <div className="flex flex-col items-end gap-2">
-                    <Badge>
-                      {(job.matchScore || 0)}% Match
+                    <Badge title={matchTooltip(job)}>
+                      {matchLabel(job)}
                     </Badge>
 
                     <Badge variant={job.info.type === "Full-Time" ? "default" : "secondary"}>
@@ -580,7 +547,11 @@ const JobListings = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Low Match Warning</AlertDialogTitle>
             <AlertDialogDescription>
-              Your skills do not strongly match this job. Are you sure you want to continue applying?
+              Your skills do not strongly match this job ({jobToApply?.matchScore ?? 0}% match).
+              {jobToApply?.missingSkills?.length > 0 && (
+                <> Skills you don't list: <strong>{jobToApply.missingSkills.join(", ")}</strong>.</>
+              )}{" "}
+              Are you sure you want to continue applying?
             </AlertDialogDescription>
           </AlertDialogHeader>
 

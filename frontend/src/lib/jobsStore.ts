@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { AIVerification } from '@/components/admin/AIVerificationPanel';
 
 export interface Job {
   _id: string;
@@ -25,6 +26,7 @@ export interface Job {
   status: "PENDING" | "ACCEPTED" | "DECLINED" | "active" | "pending" | "not_active";
   createdAt?: string;
   skills?: string[];
+  verification?: AIVerification | null;
 }
 
 interface JobsStore {

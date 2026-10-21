@@ -14,13 +14,14 @@ import {
   XCircle,
   Trash2,
   MapPin,
-  DollarSign,
+  PhilippinePeso,
   Clock,
   Building2,
   Mail,
   Phone,
 } from "lucide-react";
 import { useJobsStore, Job } from "@/lib/jobsStore";
+import AIVerificationPanel from "./AIVerificationPanel";
 import { toast } from "sonner";
 import axios from "axios";
 import { useRef } from "react";
@@ -111,6 +112,8 @@ const JobDetailModal = ({
 
         <ScrollArea className="max-h-[55vh] px-6">
           <div className="space-y-5 pb-4">
+            <AIVerificationPanel verification={job.verification} />
+
             {/* Quick Info */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -118,7 +121,7 @@ const JobDetailModal = ({
                 {job.location || "No Location Specified"}
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <DollarSign className="w-4 h-4 text-primary" />
+                <PhilippinePeso className="w-4 h-4 text-primary" />
                 {job.salary || "N/A"}
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

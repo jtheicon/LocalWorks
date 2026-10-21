@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -22,71 +22,143 @@ import { Badge } from "@/components/ui/badge";
 import { X, Plus, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 import axios from "axios";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { todayInputDate, isPastInputValue } from "@/lib/utils";
+import DagupanLocationPicker from "@/components/DagupanLocationPicker";
 
 axios.defaults.withCredentials = true;
+
+// Shown even when the Industries collection is empty; merged with approved industries.
+const DEFAULT_CATEGORIES = [
+  "Construction", "Electrical", "Plumbing", "Farmer", "Janitor", "Food",
+  "Furniture", "Sales Clerk", "Photographer", "Cook", "Waiter",
+  "Retail Workers", "Home-Based", "Technology", "Office Work",
+];
+
+const PAY_FREQUENCIES = [
+  { value: "Daily", suffix: "day" },
+  { value: "Weekly", suffix: "week" },
+  { value: "Monthly", suffix: "month" },
+] as const;
+
+type PayFrequency = (typeof PAY_FREQUENCIES)[number]["value"];
+
+// e.g. 15000 + "Monthly" -> "₱15,000/month" (salary is stored as a string on the Job model)
+const formatSalary = (amount: string, frequency: PayFrequency) => {
+  const suffix = PAY_FREQUENCIES.find((f) => f.value === frequency)?.suffix;
+  return `₱${Number(amount).toLocaleString("en-PH")}/${suffix}`;
+};
+
+const EMPTY_FORM = {
+  title: "",
+  location: "",
+  salaryAmount: "",
+  payFrequency: "Monthly" as PayFrequency,
+  type: "Full-Time",
+  description: "",
+  requirements: "",
+  benefits: "",
+  schedule: "",
+  positions: 1,
+  applyBefore: "",
+  startDate: "",
+  category: "", // required
+  categoryTitle: "",
+};
+
+// The parts of a saved job the form can edit.
+export interface EditableJob {
+  _id: string;
+  title: string;
+  location: string;
+  salary: string;
+  type: string;
+  description: string;
+  requirements: string[];
+  benefits: string[];
+  tags: string[];
+  schedule: string;
+  positions: number;
+  applyBefore: string;
+  startDate: string;
+  category: string;
+}
 
 interface PostJobModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Pass a job to edit it; leave out to post a new one.
+  job?: EditableJob | null;
 }
+
+const isInputDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
+
+// "₱15,000/month" -> { salaryAmount: "15000", payFrequency: "Monthly" }
+const parseSalary = (salary: string) => {
+  const amount = (salary || "").replace(/,/g, "").match(/\d+(\.\d+)?/)?.[0] ?? "";
+  const lower = (salary || "").toLowerCase();
+  const payFrequency: PayFrequency = lower.includes("day") ? "Daily" : lower.includes("week") ? "Weekly" : "Monthly";
+  return { salaryAmount: amount, payFrequency };
+};
+
+const formFromJob = (job: EditableJob) => ({
+  ...EMPTY_FORM,
+  title: job.title || "",
+  location: job.location || "", // older, non-Dagupan locations must be re-picked
+  ...parseSalary(job.salary),
+  type: job.type || "Full-Time",
+  description: job.description || "",
+  requirements: (job.requirements || []).join("\n"),
+  benefits: (job.benefits || []).join("\n"),
+  schedule: job.schedule || "",
+  positions: job.positions || 1,
+  applyBefore: isInputDate(job.applyBefore) ? job.applyBefore : "",
+  startDate: isInputDate(job.startDate) ? job.startDate : "",
+  category: job.category || "",
+  categoryTitle: "",
+});
 
 interface Location {
   _id: string;
   name: string;
 }
 
-const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
+const PostJobModal = ({ open, onOpenChange, job = null }: PostJobModalProps) => {
+  const queryClient = useQueryClient();
+
   /* -------------------------------------------------------------------------- */
   /*                                Form State                                  */
   /* -------------------------------------------------------------------------- */
-  const [formData, setFormData] = useState({
-    title: "",
-    location: "",
-    salary: "",
-    type: "Full-Time",
-    description: "",
-    requirements: "",
-    benefits: "",
-    schedule: "",
-    positions: 1,
-    applyBefore: "",
-    startDate: "",
-    category: "", // required
-    categoryTitle: "",
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
+
+  // Recomputed every render so the date pickers never offer a past day,
+  // even if the modal stays open past midnight.
+  const minDate = todayInputDate();
+  const minStartDate =
+    formData.applyBefore && formData.applyBefore > minDate ? formData.applyBefore : minDate;
 
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
 
-  const [mapQuery, setMapQuery] = useState("");
-  const [mapUrl, setMapUrl] = useState(
-    "https://maps.google.com/maps?q=16.167700,120.426300&z=18&output=embed"
-  );
+  // Editing: fill the form from the job once per opening. Opening for a new post after
+  // an edit starts from a blank form instead of the edited job's values.
+  const filledFrom = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    if (job && filledFrom.current !== job._id) {
+      setFormData(formFromJob(job));
+      setTags(job.tags || []);
+      filledFrom.current = job._id;
+    } else if (!job && filledFrom.current) {
+      setFormData(EMPTY_FORM);
+      setTags([]);
+      filledFrom.current = null;
+    }
+  }, [open, job]);
 
-  const handleLocationSearch = async () => {
-    if (!mapQuery.trim()) return;
-
-    const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-      mapQuery
-    )}`;
-
-    const res = await fetch(geocodeUrl);
-    const data = await res.json();
-
-    if (!data.length) return;
-
-    const { lat, lon, display_name } = data[0];
-
-    setMapUrl(
-      `https://maps.google.com/maps?q=${lat},${lon}&z=17&output=embed`
-    );
-
-    setFormData({
-      ...formData,
-      location: display_name,
-    });
-  };
+  // An unchanged date may stay even if it has passed (the server allows that too).
+  const minApplyBefore = job?.applyBefore && job.applyBefore < minDate && formData.applyBefore === job.applyBefore ? job.applyBefore : minDate;
+  const minStart = job?.startDate && job.startDate < minStartDate && formData.startDate === job.startDate ? job.startDate : minStartDate;
 
   /* -------------------------------------------------------------------------- */
   /*                             Fetch Locations                                */
@@ -107,6 +179,14 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
   });
 
   const industries = industryData?.Industries || [];
+
+  const categoryOptions = Array.from(
+    new Set([
+      ...DEFAULT_CATEGORIES,
+      ...industries.map((i: { title: string }) => i.title).filter(Boolean),
+      ...(job?.category ? [job.category] : []),
+    ])
+  ).sort((a, b) => a.localeCompare(b));
 
   /* -------------------------------------------------------------------------- */
   /*                             Tag Management                                 */
@@ -142,7 +222,7 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
           posted: "EMPLOYER_ID",
           location: formData.location,
           type: formData.type,
-          salary: formData.salary,
+          salary: formatSalary(formData.salaryAmount, formData.payFrequency),
           description: formData.description,
           requirements: formData.requirements
             .split("\n")
@@ -152,53 +232,38 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
             .split("\n")
             .map((b) => b.trim())
             .filter(Boolean),
-          tags: tags.length > 0 ? tags : ["New Posting"],
+          tags,
           schedule: formData.schedule,
           startDate: formData.startDate || undefined,
           positions: Number(formData.positions),
           applyBefore: formData.applyBefore,
-          category: formData.category,
-          categoryTitle: formData.category
+          category: formData.category === "others" ? formData.categoryTitle.trim() : formData.category,
+          categoryTitle: formData.category === "others" ? formData.categoryTitle.trim() : formData.category,
         };
 
-      const { data } = await axios.post(
-        "http://localhost:8920/api/pro/createJob",
-        Payload
-      );
+      const { data } = job
+        ? await axios.put(`http://localhost:8920/api/pro/job/${job._id}`, Payload)
+        : await axios.post("http://localhost:8920/api/pro/createJob", Payload);
 
       toast.success(data.message, {
-        description:
-          "Workers can now view and apply to your job posting.",
+        description: job
+          ? "Workers will see your changes once the job is re-checked."
+          : "Workers can now view and apply to your job posting.",
       });
 
+      queryClient.invalidateQueries({ queryKey: ["postedJobs"] });
+
       // Reset form
-      setFormData({
-        title: "",
-        location: "",
-        salary: "",
-        type: "Full-Time",
-        description: "",
-        requirements: "",
-        benefits: "",
-        schedule: "",
-        positions: 1,
-        applyBefore: "",
-        startDate: "",
-        category: "", // reset
-        categoryTitle: ""
-      });
+      setFormData(EMPTY_FORM);
       setTags([]);
+      filledFrom.current = null;
       onOpenChange(false);
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.message || "Failed to create job."
+        error?.response?.data?.message || (job ? "Failed to update job." : "Failed to create job.")
       );
     }
   };
-
-  const moveMarginAtTop = {
-    marginTop: "-04px"
-  }
 
   /* -------------------------------------------------------------------------- */
   /*                             Form Validation                                */
@@ -209,7 +274,7 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
     if (
       !formData.title ||
       !formData.location ||
-      !formData.salary ||
+      !formData.salaryAmount ||
       !formData.description ||
       !formData.schedule ||
       !formData.applyBefore ||
@@ -220,7 +285,29 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
     ) {
       toast.error("Please fill in all required fields.");
       return;
-}
+    }
+
+    // Skills drive job matching, so a job needs at least one.
+    if (!tags.length) {
+      toast.error("Add at least one required skill.");
+      return;
+    }
+
+    if (Number(formData.salaryAmount) <= 0) {
+      toast.error("Salary must be greater than 0.");
+      return;
+    }
+
+    // `min` only limits the picker; typed-in dates still need checking.
+    if (isPastInputValue(formData.applyBefore, minApplyBefore)) {
+      toast.error("Apply Before date cannot be in the past.");
+      return;
+    }
+
+    if (isPastInputValue(formData.startDate, minStart)) {
+      toast.error("Start Date cannot be in the past or before the Apply Before date.");
+      return;
+    }
 
     postJob();
   };
@@ -234,10 +321,12 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Briefcase className="w-5 h-5 text-primary" />
-            Post a New Job
+            {job ? "Edit Job Post" : "Post a New Job"}
           </DialogTitle>
           <DialogDescription>
-            Fill in the details below to create a job posting that workers can apply to.
+            {job
+              ? "Fix or update your job post. It will be re-checked before workers see the changes."
+              : "Fill in the details below to create a job posting that workers can apply to."}
           </DialogDescription>
         </DialogHeader>
 
@@ -282,83 +371,87 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
               </div>
 
               <div className="space-y-2">
-                <Label>Category *</Label>
+                <Label>Job Category *</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      category: value,
+                      categoryTitle: value === "others" ? "" : value,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={industryLoading ? "Loading categories..." : "Select a category"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {categoryOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="others">Others (specify)</SelectItem>
+                  </SelectContent>
+                </Select>
+                {formData.category === "others" && (
                   <Input
                     placeholder="Enter category"
-                    value={formData.category}
+                    value={formData.categoryTitle}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        category: e.target.value,
-                        categoryTitle: e.target.value,
-                      })
+                      setFormData({ ...formData, categoryTitle: e.target.value })
                     }
                   />
-              </div>
-
-              <div className="space-y-3 mb-25" style={moveMarginAtTop}>
-                <Label>Location *</Label>
-
-                <div className="flex flex-col gap-3">
-
-                  {/* Search bar */}
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Search place, city, barangay, address..."
-                      value={mapQuery}
-                      onChange={(e) => setMapQuery(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleLocationSearch();
-                        }
-                      }}
-                    />
-
-                    <Button type="button" onClick={handleLocationSearch}>
-                      Search
-                    </Button>
-                  </div>
-
-                  {/* Map */}
-                  <div
-                    className="ratio ratio-4x3 mb-12"
-                    style={{ maxWidth: "500px", height: "300px" }}
-                  >
-                    <iframe
-                      src={mapUrl}
-                      style={{
-                        border: 0,
-                        borderRadius: "12px",
-                        width: "100%",
-                        height: "100%",
-                      }}
-                      allowFullScreen
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                      title="Google Map"
-                                          className="mb-2"
-                    />
-                    {formData.location ? (
-                        <div>
-                          <strong>Location:</strong> {formData.location}
-                        </div>
-                    ) : (
-                        <div></div>
-                    )}
-                  </div>
-
-                </div>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label>Salary/Rate *</Label>
-                <Input
-                  placeholder="e.g., ₱15,000/month"
-                  value={formData.salary}
-                  onChange={(e) =>
-                    setFormData({ ...formData, salary: e.target.value })
-                  }
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      ₱
+                    </span>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={1}
+                      step="any"
+                      placeholder="15000"
+                      className="pl-7"
+                      value={formData.salaryAmount}
+                      onChange={(e) =>
+                        setFormData({ ...formData, salaryAmount: e.target.value })
+                      }
+                    />
+                  </div>
+                  <Select
+                    value={formData.payFrequency}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, payFrequency: value as PayFrequency })
+                    }
+                  >
+                    <SelectTrigger className="w-[120px]" aria-label="Pay frequency">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAY_FREQUENCIES.map((f) => (
+                        <SelectItem key={f.value} value={f.value}>
+                          {f.value}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Location *</Label>
+                <DagupanLocationPicker
+                  value={formData.location}
+                  onChange={(location) => setFormData((prev) => ({ ...prev, location }))}
                 />
               </div>
             </div>
@@ -413,11 +506,11 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
             </div>
 
             <div className="space-y-2">
-  <Label>Tags</Label>
+  <Label>Skills *</Label>
 
   <div className="flex gap-2">
     <Input
-      placeholder="e.g., Construction, Urgent, Night Shift"
+      placeholder="e.g., Carpentry, Plumbing, Electrical Wiring"
       value={tagInput}
       onChange={(e) => setTagInput(e.target.value)}
       onKeyDown={handleKeyDown}
@@ -444,7 +537,7 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
     </div>
 
     <p className="text-xs text-muted-foreground">
-      Press Enter or click + to add tags
+      Press Enter or click + to add skills
     </p>
   </div>
 
@@ -468,6 +561,7 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
                 <Label>Apply Before *</Label>
                 <Input
                   type="date"
+                  min={minApplyBefore}
                   value={formData.applyBefore}
                   onChange={(e) =>
                     setFormData({
@@ -483,6 +577,7 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
               <Label>Start Date</Label>
               <Input
                 type="date"
+                min={minStart}
                 value={formData.startDate}
                 onChange={(e) =>
                   setFormData({
@@ -516,7 +611,7 @@ const PostJobModal = ({ open, onOpenChange }: PostJobModalProps) => {
             >
               Cancel
             </Button>
-            <Button type="submit">Post Job</Button>
+            <Button type="submit">{job ? "Save Changes" : "Post Job"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

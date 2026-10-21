@@ -1,4 +1,5 @@
 import { useState } from "react";
+import CredibilityBadge, { useCredibility } from "@/components/CredibilityBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,7 @@ const mockWorkers = [
     rating: 4.8,
     skills: ["Carpentry", "Masonry", "Electrical"],
     availability: "Immediate",
-    hourlyRate: "$22/hr",
+    hourlyRate: "₱700/day",
     avatar: "",
   },
   {
@@ -36,7 +37,7 @@ const mockWorkers = [
     rating: 4.9,
     skills: ["Residential Cleaning", "Commercial Cleaning", "Deep Cleaning"],
     availability: "Within 1 week",
-    hourlyRate: "$25/hr",
+    hourlyRate: "₱800/day",
     avatar: "",
   },
   {
@@ -48,7 +49,7 @@ const mockWorkers = [
     rating: 4.7,
     skills: ["Local Delivery", "Long Distance", "Fragile Items"],
     availability: "Immediate",
-    hourlyRate: "$18/hr",
+    hourlyRate: "₱600/day",
     avatar: "",
   },
   {
@@ -60,7 +61,7 @@ const mockWorkers = [
     rating: 5.0,
     skills: ["Serving", "Bartending", "Event Catering"],
     availability: "Within 2 weeks",
-    hourlyRate: "$15/hr + tips",
+    hourlyRate: "₱500/day + tips",
     avatar: "",
   },
   {
@@ -72,7 +73,7 @@ const mockWorkers = [
     rating: 4.6,
     skills: ["Forklift Operation", "Inventory Management", "Shipping"],
     availability: "Immediate",
-    hourlyRate: "$17/hr",
+    hourlyRate: "₱550/day",
     avatar: "",
   },
   {
@@ -84,7 +85,7 @@ const mockWorkers = [
     rating: 4.9,
     skills: ["Armed Security", "Surveillance", "First Aid"],
     availability: "Within 1 week",
-    hourlyRate: "$20/hr",
+    hourlyRate: "₱650/day",
     avatar: "",
   },
 ];
@@ -115,6 +116,11 @@ const BrowseWorkers = () => {
     queryKey: ['BrowseWorkersAx'],
     queryFn: BrowseWorkersAx
   })
+
+  const { data: workerScores = {} } = useCredibility(
+    "worker",
+    (data?.workers || []).map((w: any) => w._id)
+  )
 
   if (isLoading) return <div>Loading...</div>
   if (error) return <div>Error: {error.message}</div>
@@ -191,6 +197,9 @@ const BrowseWorkers = () => {
                   <div className="flex items-center gap-1 mt-1">
                     <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                     <span className="text-sm font-medium">{worker.rating}</span>
+                  </div>
+                  <div className="mt-2">
+                    <CredibilityBadge credibility={workerScores[worker._id]} subject="Worker" />
                   </div>
                 </div>
               </div>

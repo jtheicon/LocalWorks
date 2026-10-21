@@ -8,19 +8,19 @@ import { useToast } from "@/components/ui/use-toast";
 
 interface OTPVerificationProps {
   email: string;
-  otpFromEmail: string;
-  newDate: Date;
-  onVerified: () => void;
+  // "register" for sign-up, "password_reset" for forgot password.
+  purpose: "register" | "password_reset";
+  // Needed to resend a password-reset code ("Worker" | "Employer").
+  role?: string;
+  // Receives the server-issued token that the register / reset request must include.
+  onVerified: (token: string) => void;
   onResend: () => void;
 }
 
-const OTPVerification = ({ email, otpFromEmail, newDate, onVerified, onResend }: OTPVerificationProps) => {
+const OTPVerification = ({ email, purpose, role, onVerified, onResend }: OTPVerificationProps) => {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [isReset, setIsReset] = useState(false)
   const [isVerifying, setIsVerifying] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
-  const [OtpFromEmail, setOtpFromEmail] = useState(null);
-  const [NewDate, setNewDate] = useState(null);
   const [error, setError] = useState("");
   const [countdown, setCountdown] = useState(60);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -36,7 +36,7 @@ const OTPVerification = ({ email, otpFromEmail, newDate, onVerified, onResend }:
 
   const handleChange = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
-    
+
     const newOtp = [...otp];
     newOtp[index] = value.slice(-1);
     setOtp(newOtp);
@@ -58,7 +58,7 @@ const OTPVerification = ({ email, otpFromEmail, newDate, onVerified, onResend }:
     e.preventDefault();
     const pastedData = e.clipboardData.getData("text").slice(0, 6);
     if (!/^\d+$/.test(pastedData)) return;
-    
+
     const newOtp = [...otp];
     pastedData.split("").forEach((char, i) => {
       if (i < 6) newOtp[i] = char;
@@ -66,52 +66,27 @@ const OTPVerification = ({ email, otpFromEmail, newDate, onVerified, onResend }:
     setOtp(newOtp);
   };
 
+  // The code is checked by the server; the browser never sees the real code.
   const handleVerify = async () => {
-    try {      
-      const otpValue = otp.join("");
-      if (otpValue.length !== 6) {
-        setError("Please enter all 6 digits");
-        return;
-      }
+    const otpValue = otp.join("");
+    if (otpValue.length !== 6) {
+      setError("Please enter all 6 digits");
+      return;
+    }
 
-      if (isReset) {
-        if (NewDate < new Date()) {
-          setError("OTP is already expired");
-          return;
-        }
-
-        if (otpValue !== OtpFromEmail) {
-          setError("OTP doesn't match");
-          return;
-        }
-
-      } else {
-        
-        if (newDate < new Date()) {
-          setError("OTP is already expired");
-          return;
-        }
-        
-        if (otpValue !== otpFromEmail) {
-          setError("OTP doesn't match");
-          return;
-        }
-      }
-
-
-      setIsVerifying(true);
-      // Simulate OTP verification
-      setTimeout(() => {
-        setIsVerifying(false);
-        setIsVerified(true);
-        onVerified();
-      }, 1500);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to verify OTP",
-        variant: "destructive",
+    setIsVerifying(true);
+    try {
+      const res = await axios.post("http://localhost:8920/api/auth/otp/verify", {
+        email,
+        otp: otpValue,
+        purpose,
       });
+      setIsVerified(true);
+      onVerified(res.data.token);
+    } catch (err: any) {
+      setError(err?.response?.data?.info || "Failed to verify OTP");
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -125,19 +100,18 @@ const OTPVerification = ({ email, otpFromEmail, newDate, onVerified, onResend }:
       return;
     }
 
-    setIsReset(true)
-
     try {
-      const res = await axios.get(`http://localhost:8920/api/auth/otp/${email}`)
-
-      setNewDate(res.data.newDate)
-      setOtpFromEmail(res.data.otp)
-    } catch (error) {
+      const url = purpose === "password_reset"
+        ? `http://localhost:8920/api/auth/otp/${email}/${role}`
+        : `http://localhost:8920/api/auth/otp/${email}`;
+      await axios.get(url);
+    } catch (err: any) {
       toast({
         title: "Error",
-        description: "Failed to Resend OTP.",
+        description: err?.response?.data?.info || "Failed to Resend OTP.",
         variant: "destructive",
       });
+      return;
     }
 
     setCountdown(60);
@@ -178,9 +152,9 @@ const OTPVerification = ({ email, otpFromEmail, newDate, onVerified, onResend }:
         {error && <p className="text-sm text-destructive text-center">{error}</p>}
       </div>
 
-      <Button 
-        type="button" 
-        onClick={handleVerify} 
+      <Button
+        type="button"
+        onClick={handleVerify}
         className="w-full"
         disabled={isVerifying || otp.join("").length !== 6}
       >

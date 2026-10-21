@@ -37,7 +37,13 @@ const EmployerSchema: Schema = new Schema({
   profile: { type: String, default: "default.jpg" },
   permit: { type: String, default: "" },
   status: { type: String, default: "pending" },
-  role: { type: String, enum: ["employer"], default: "employer" }
+  role: { type: String, enum: ["employer"], default: "employer" },
+  // Latest automated (AI) verification result; see services/autoVerify.ts
+  verification: { type: Schema.Types.Mixed, default: null },
+  // Last login / authenticated request; used to deactivate accounts idle for 6+ months
+  lastActiveAt: { type: Date },
+  // Why the account was deactivated automatically, e.g. { reason: "inactivity", at }
+  deactivation: { type: Schema.Types.Mixed, default: null }
 }, { timestamps: true })
 
 export default model<IEmployer>("Employer", EmployerSchema)

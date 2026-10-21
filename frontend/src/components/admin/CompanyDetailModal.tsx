@@ -11,7 +11,7 @@ import {
   Mail,
   Phone,
   MapPin,
-  DollarSign,
+  PhilippinePeso,
   Eye,
 } from "lucide-react";
 import { Job } from "@/lib/jobsStore";
@@ -180,7 +180,7 @@ const CompanyDetailModal = ({
                           </span>
 
                           <span className="flex items-center gap-1">
-                            <DollarSign className="w-3 h-3" />
+                            <PhilippinePeso className="w-3 h-3" />
                             {job.salary}
                           </span>
                         </div>

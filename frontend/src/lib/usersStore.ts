@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { AIVerification } from '@/components/admin/AIVerificationPanel';
 
 export interface UserProfile {
   _id?: string;
@@ -28,6 +29,7 @@ export interface UserProfile {
   createdAt: string;
   jobTitle?: string;
   isVerified?: Boolean;
+  verification?: AIVerification | null;
 }
 
 const mockUsers: UserProfile[] = [

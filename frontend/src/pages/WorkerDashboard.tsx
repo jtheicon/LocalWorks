@@ -164,7 +164,7 @@ const WorkerDashboard = () => {
 
       <main className="container mx-auto px-4 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="w-fit">
+          <TabsList className="w-fit h-auto flex-wrap justify-start gap-1">
             <TabsTrigger value="jobs" className="gap-2">
               <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">Find Jobs</span>

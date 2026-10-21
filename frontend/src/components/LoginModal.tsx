@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { User, Briefcase, Eye, EyeOff } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -34,8 +34,8 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
   const [step, setStep] = useState("");
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [disabled, setDisabled] = useState(false);
-  const [newDate, setNewDate] = useState();
-  const [otpFromEmail, setOtpFromEmail] = useState();
+  // Server-issued proof of the verified OTP; required to update the password.
+  const [resetToken, setResetToken] = useState("");
   const [userRole, setUserRole] = useState("");
   const [create_password, setPassword] = useState("");
   const [confirm_password, setConfirm] = useState("");
@@ -55,10 +55,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
       }
 
       await axios.get(`http://localhost:8920/api/auth/otp/${OTPEMAIL}/${role}`)
-        .then(function (response) {
-          setNewDate(response.data.newDate)
-          setOtpFromEmail(response.data.otp)
-
+        .then(function () {
           setStep("otp")
           setDisabled(true)
           toast.success("An OTP has been sent.")
@@ -103,7 +100,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
   }
 
   const handlePassword = async () => {
-    await axios.put("http://localhost:8920/api/auth/password/update", { email: OTPEMAIL, role: userRole, create_password, confirm_password }, {
+    await axios.put("http://localhost:8920/api/auth/password/update", { email: OTPEMAIL, role: userRole, create_password, confirm_password, resetToken }, {
       withCredentials: true
     })
       .then(function (response) {
@@ -115,6 +112,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
           setConfirm("")
           
           setIsEmailVerified(false)
+          setResetToken("")
           SetForgot(false)
           SETOTPEMAIL("")
 
@@ -267,6 +265,17 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
             Sign up
           </button>
         </p>
+
+        <p className="text-center text-xs text-muted-foreground">
+          Administrator?{" "}
+          <Link
+            to="/admin"
+            onClick={() => onOpenChange(false)}
+            className="font-medium text-primary hover:underline"
+          >
+            Sign in to the admin portal
+          </Link>
+        </p>
       </DialogContent>
     </Dialog>
       <Dialog
@@ -279,6 +288,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
           setConfirm("")
 
           setIsEmailVerified(false)
+          setResetToken("")
           SetForgot(false)
           SETOTPEMAIL("")
 
@@ -303,9 +313,10 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
           {step === "otp" && isEmailVerified === false ? (
             <OTPVerification
               email={OTPEMAIL}
-              otpFromEmail={otpFromEmail}
-              newDate={newDate}
-              onVerified={() => {
+              purpose="password_reset"
+              role={userRole}
+              onVerified={(token) => {
+                setResetToken(token)
                 setIsEmailVerified(true)
                 setStep("")
                 toast.success("Email Verified", {

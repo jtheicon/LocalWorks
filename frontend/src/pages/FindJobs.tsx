@@ -45,14 +45,16 @@ const FindJobs = () => {
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
 
   const parseSalary = (salary: string) => {
-    // handles formats like "50,000", "$50,000", "50k"
-    const cleaned = salary.replace(/[^0-9kK]/g, "").toLowerCase();
+    // handles formats like "50,000", "₱50,000", "50k", "₱600/day", "₱3,500/week"
+    const match = (salary || "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)\s*(k\b)?/i);
+    if (!match) return 0;
 
-    if (cleaned.includes("k")) {
-      return parseFloat(cleaned.replace("k", "")) * 1000;
-    }
+    const amount = parseFloat(match[1]) * (match[2] ? 1000 : 1);
 
-    return parseFloat(cleaned) || 0;
+    // Normalize to a monthly figure so daily/weekly rates rank fairly against monthly ones.
+    if (/\/\s*day|daily/i.test(salary)) return amount * 22;
+    if (/\/\s*week|weekly/i.test(salary)) return amount * 4;
+    return amount;
   };
 
   const findJobs = async () => {

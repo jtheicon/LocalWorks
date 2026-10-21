@@ -5,12 +5,9 @@ import { useReviewsStore } from "@/lib/reviewsStore";
 import { exportToCSV } from "@/lib/csvExport";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import AdminHeader from "@/components/admin/AdminHeader";
-import StatsCards from "@/components/admin/StatsCards";
-import AdminCharts from "@/components/admin/AdminCharts";
+import AdminAnalytics from "@/components/admin/AdminAnalytics";
 import AdminReports from "@/components/admin/AdminReports";
-import PostedJobsTable from "@/components/admin/PostedJobsTable";
 import AllPostedJobs from "@/components/admin/AllPostedJobs";
-import CategoryDetails from "@/components/admin/CategoryDetails";
 import AdminProfiles from "@/components/admin/AdminProfiles";
 import AdminNotifications from "@/components/admin/AdminNotifications";
 import { Button } from "@/components/ui/button";
@@ -38,6 +35,7 @@ const AdminDashboard = () => {
       queryKey: ['adminDashboard'],
       refetchType: 'active',
     });
+    queryClient.invalidateQueries({ queryKey: ['adminAnalytics'] });
   };
 
   const Dashboard = async () => {
@@ -123,25 +121,13 @@ const AdminDashboard = () => {
     return (
       <main className="flex-1 p-6 space-y-6 overflow-auto">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Welcome Back!, Admin</h2>
-          <p className="text-sm text-muted-foreground">Here's what happening with your reports today</p>
+          <h2 className="text-xl font-bold text-foreground">Platform Overview</h2>
+          <p className="text-sm text-muted-foreground">
+            High-level statistics across sectors. Individual jobs and accounts are managed in the Posted Jobs and Profiles tabs.
+          </p>
         </div>
 
-        <StatsCards
-          totalJobs={totalJobs}
-          pendingJobs={pendingJobs}
-          acceptedJobs={acceptedJobs}
-          rejectedJobs={rejectedJobs}
-        />
-
-        <AdminCharts jobs={JOBS} workers={WORKERS} verifiedWorkers={VERIFIED_WORKERS} reportedWorkers={REPORT_WORKERS} />
-
-        <PostedJobsTable
-          jobs={JOBS}
-          onViewAll={() => setActiveTab("jobs")}
-        />
-
-        <CategoryDetails workers={WORKERS} />
+        <AdminAnalytics />
       </main>
     );
   };

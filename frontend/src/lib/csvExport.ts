@@ -15,11 +15,16 @@ export const exportToCSV = (data: Record<string, unknown>[], filename: string) =
     ),
   ];
 
-  const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  // The BOM makes Excel read the file as UTF-8, so "₱" and accented names display correctly.
+  const blob = new Blob(["﻿" + csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  downloadBlob(blob, `${filename}_${new Date().toISOString().slice(0, 10)}.csv`);
+};
+
+export const downloadBlob = (blob: Blob, fileName: string) => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${filename}_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
 };

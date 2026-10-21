@@ -4,8 +4,10 @@
   "description": "",
   "main": "./src/server.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node -r ts-node/register/transpile-only --test src/**/*.test.ts",
+    "eval:matching": "dotenvx run -- ts-node src/scripts/evalMatching.ts",
     "seed:jobs": "dotenvx run -- ts-node src/scripts/seedJobs.ts",
+    "seed:demo": "dotenvx run -- ts-node src/scripts/seedDemo.ts",
     "start": "dotenvx run -- nodemon --watch 'src/**/*.ts'"
   },
   "keywords": [],
@@ -36,6 +38,7 @@
     "@aws-sdk/s3-request-presigner": "^3.971.0",
     "@dotenvx/dotenvx": "^1.51.4",
     "@google-cloud/local-auth": "^2.1.0",
+    "@google/genai": "^2.27.0",
     "@supabase/supabase-js": "^2.91.0",
     "@types/nodemailer": "^8.0.1",
     "@types/passport": "^1.0.17",
@@ -55,6 +58,7 @@
     "jaro-winkler": "^0.2.8",
     "jsdom": "^27.4.0",
     "jsonwebtoken": "^9.0.3",
+    "mammoth": "^1.13.0",
     "mongodb": "^7.5.0",
     "mongoose": "^9.1.4",
     "multer": "^2.0.2",

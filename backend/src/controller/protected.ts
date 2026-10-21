@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { clearAuthCookieOptions } from "../config/http";
 import { ApplicationSchema, CompanySchema, JobOverviewSchema, EmployerIdSchema, JobSchema, LocationSchema, TagSchema, employerIdSchema, ViewProfile, WorkerIDJob, JobIDJob, ApplicationStatusUpdate, OnlyAccepted, UpdateApplication, InterviewDate, CompanySchemaID, IsAppliedS, WorkerID, TimeLineStatus, UpdateWorkerSchema, UpdateEmployerSchema, EmployerProfileS, RatingSchema, PostContacts, EmployerSchemaid, SkillID, PostMessage, ViewMessageByContactID, NotificationIDSchema, reportValidator, reportWorkerValidator, UpdateReportSchema, DeleteReportSchema, NewWorkerAssignmentSchema, UploadWorkerJobSchema, UpdateWorkerJobSchema, SubmittedFilesSchema, DeleteWorkerJobSchema, SubmittedJobsSchema, SubmittedJobsIDSchema, CompletedAssignmentSchema, NewWorkerJobSchema, DeleteJobSchema, GetReportDetailsSchema, StatusReasonSchema, ViewEmployerResponsesSchema, SubmitEvidenceUpdate, DeleteReportXSchema, DeleteReportsSchema } from "../validator/protected";
 import Job from "../model/Job";
+import { autoModerateJob, runInBackground } from "../services/autoVerify";
 import { filterXSS } from "xss";
 import Application from "../model/Application";
 import { UserSchema } from "../validator/authentication";
@@ -30,6 +31,8 @@ import { ResponseModel } from "../model/Response";
 import Report from "../model/Report";
 import VerifiedWorker from "../model/VerifiedWorker";
 import ReportWorker from "../model/ReportWorker";
+import { matchJobsForWorker } from "../services/jobMatching";
+import { RECOMMENDED_SCORE } from "../matching/skillScore";
 import WorkerAssignment from "../model/WorkerAssignment";
 import fs from "fs";
 import path from "path";
@@ -1124,6 +1127,82 @@ export const newApplication = async (req: Request, res: Response) => {
 
 
 
+// Shared by createJob and UpdateJob: date checks, XSS sanitizing, and category matching.
+// Edits pass the job's current dates so an unchanged date that has since passed is allowed.
+// Changes the payload in place; returns an error message, or null when it is ready to save.
+const prepareJobPayload = async (
+  payload: ReturnType<typeof JobSchema.parse>,
+  previous?: { startDate?: string; applyBefore?: string }
+): Promise<string | null> => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const startDate = new Date(payload.startDate as string);
+  startDate.setHours(0, 0, 0, 0);
+
+  const applyBefore = new Date(payload.applyBefore as string);
+  applyBefore.setHours(0, 0, 0, 0);
+
+  if (startDate < today && payload.startDate !== previous?.startDate) return "Start date cannot be in the past"
+  if (applyBefore < today && payload.applyBefore !== previous?.applyBefore) return "Apply before date cannot be in the past"
+
+  // Sanitize XSS: Link - https://medium.com/@ferrosful/nodejs-security-unleashed-exploring-xss-attack-8d3a61a01a09
+  const clean = (text: string) => filterXSS(text, { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true })
+  payload.title = clean(payload.title)
+  payload.description = clean(payload.description)
+  payload.schedule = clean(payload.schedule)
+  payload.salary = clean(payload.salary)
+  payload.location = clean(payload.location)
+  payload.category = clean(String(payload.category))
+  payload.categoryTitle = clean(String(payload.categoryTitle))
+  payload.tags = payload.tags.map(clean)
+  payload.requirements = payload.requirements.map(clean)
+  payload.benefits = payload.benefits.map(clean)
+
+  if (!payload.tags.length) return "Add at least one skill"
+
+  const { categoryTitle } = payload
+
+  if (categoryTitle?.trim()) {
+    const normalizedCategory = normalize(categoryTitle);
+
+    const industries = await Industry.find({});
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const i of industries) {
+      const score = jaro.similarity(
+        normalizedCategory,
+        normalize(i.title)
+      );
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = i;
+      }
+    }
+
+    const THRESHOLD = 0.95;
+
+    if (bestMatch && bestScore >= THRESHOLD) {
+      payload.category = bestMatch.title;
+    } else {
+      const createdCategory = new Industry({
+        title: categoryTitle,
+      });
+
+      await createdCategory.save();
+
+      payload.category = createdCategory.title;
+    }
+  }
+
+  return null
+}
+
+
+
 // Create new Job:
 export const createJob = async (req: Request, res: Response) => {
 
@@ -1151,110 +1230,19 @@ export const createJob = async (req: Request, res: Response) => {
 
   const payload = validatedJobData.data
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const startDate = new Date(payload.startDate as string);
-  startDate.setHours(0, 0, 0, 0);
-
-  const applyBefore = new Date(payload.applyBefore as string);
-  applyBefore.setHours(0, 0, 0, 0);
-
-  if (startDate < today) {
-    return res.status(400).json({
-      success: false,
-      message: "Start date cannot be in the past",
-    });
-  }
-
-  if (applyBefore < today) {
-    return res.status(400).json({
-      success: false,
-      message: "Apply before date cannot be in the past",
-    });
-  }
-
-  // Sanitize XSS: Link - https://medium.com/@ferrosful/nodejs-security-unleashed-exploring-xss-attack-8d3a61a01a09:   // Will log `**Hello,world!**` - console.log(`text: ${html.replace(/\\s/g, '')}`); - Commented for the source
-  payload.title = filterXSS(payload.title, { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true })
-  payload.description = filterXSS(payload.description, { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true })
-  payload.schedule = filterXSS(payload.schedule, { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true })
-  payload.salary = filterXSS(payload.salary, { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true })
-  payload.category = filterXSS(String(payload.category), { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true })
-  payload.categoryTitle = filterXSS(String(payload.categoryTitle), {
-    whiteList: {},
-    stripIgnoreTag: true,
-    stripIgnoreTagBody: true,
-  });
-
-  const { category, categoryTitle } = payload;
-
-  for (let i = 0; i < payload.tags.length; i++) { payload.tags[i] = filterXSS(payload.tags[i], { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true }) }
-  for (let i = 0; i < payload.requirements.length; i++) { payload.requirements[i] = filterXSS(payload.requirements[i], { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true }) }
-  for (let i = 0; i < payload.benefits.length; i++) {
-    payload.benefits[i] = filterXSS(payload.benefits[i], { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true })
-  }
-
   try {
-    let finalCategory = category;
+    const problem = await prepareJobPayload(payload)
+    if (problem) return res.status(400).json({ success: false, message: problem })
 
-    if (categoryTitle?.trim()) {
-      const normalizedCategory = normalize(categoryTitle);
-
-      const industries = await Industry.find({});
-
-      let bestMatch = null;
-      let bestScore = 0;
-
-      for (const i of industries) {
-        const score = jaro.similarity(
-          normalizedCategory,
-          normalize(i.title)
-        );
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = i;
-        }
-      }
-
-      const THRESHOLD = 0.95;
-
-      if (bestMatch && bestScore >= THRESHOLD) {
-        finalCategory = bestMatch.title;
-      } else {
-        const createdCategory = new Industry({
-          title: categoryTitle,
-        });
-
-        await createdCategory.save();
-
-        finalCategory = createdCategory.title;
-      }
-    }
-
-    payload.category = finalCategory;
-    
-    if (!payload.tags.length) return res.status(400).json({ success: false, message: "Tags should not be empty" })
-      
     const newJob = new Job(payload)
     await newJob.save()
 
-    const notification = await AdminNotification.create(
-      createJobPayload(
-        payload.category,
-        details.email,
-        new Date()
-      )
-    );
-
-    io.emit(
-      "notification:new",
-      notification
-    );
+    // AI screens the post and publishes it; the admin is only notified if it gets flagged.
+    runInBackground("job moderation", () => autoModerateJob(newJob._id.toString()))
 
     return res.status(201).json({
       success: true,
-      message: "Job Successfully Created!"
+      message: "Job Successfully Created! It will be published after a quick automated check."
     })
   } catch (error: unknown) {
     console.error(error)
@@ -1291,6 +1279,62 @@ export const GetIndustries = async (req: Request, res: Response) => {
 };
 
 
+// Edit a Job (employer fixing a typo, changing the pay, etc.):
+// Edits are published right away without the AI check, so a rate-limited or unavailable
+// AI can't leave an edited post stuck. Posts an admin declined still go back to the admin.
+export const UpdateJob = async (req: Request, res: Response) => {
+  const validatedUser = employerIdSchema.safeParse({ id: req.user.id, role: req.user.role })
+  if (validatedUser.error) { const error = validatedUser.error.issues; return res.status(400).json({ success: false, message: error[0].message }) }
+
+  const validatedJobId = JobIDJob.safeParse({ job: req.params._id })
+  if (validatedJobId.error) { const error = validatedJobId.error.issues; return res.status(400).json({ success: false, message: error[0].message }) }
+
+  const { id, role } = validatedUser.data
+  const { job: jobId } = validatedJobId.data
+
+  try {
+    const details = await Employer.findOne({ _id: id, role })
+    if (!details) return res.status(404).json({ success: false, message: "Employer not found" })
+
+    // Only the employer who posted it can edit it, and deleted posts stay deleted.
+    const job = await Job.findOne({ _id: jobId, posted: id })
+    if (!job || job.status === "DELETED") return res.status(404).json({ success: false, message: "Job not found" })
+
+    // The same fields createJob fills in on the server, so the client can't change them:
+    const validatedJobData = JobSchema.safeParse({
+      ...req.body,
+      posted: id,
+      email: details.email,
+      phone: details.phone,
+      company: req.user.company,
+    })
+    if (validatedJobData.error) { const error = validatedJobData.error.issues; return res.status(400).json({ success: false, message: error[0].message }) }
+
+    const payload = validatedJobData.data
+    const problem = await prepareJobPayload(payload, { startDate: job.startDate, applyBefore: job.applyBefore })
+    if (problem) return res.status(400).json({ success: false, message: problem })
+
+    // A cleared start date goes back to the model default instead of being removed.
+    const wasDeclined = job.status === "DECLINED"
+    job.set({ ...payload, startDate: payload.startDate || "Immediate", status: wasDeclined ? "PENDING" : "ACCEPTED", verification: null })
+    await job.save()
+
+    return res.status(200).json({
+      success: true,
+      message: wasDeclined
+        ? "Job updated! An administrator will review it again."
+        : "Job updated! Your changes are now live."
+    })
+  } catch (error: unknown) {
+    console.error(error)
+
+    if (error instanceof Error) return res.status(400).json({ success: false, message: error.message })
+    return res.status(500).json({ success: false, message: "Internal Server Error" })
+  }
+}
+
+
+
 // View Jobs:
 export const viewJobs = async (req: Request, res: Response) => {
   const validatedWorker = WorkerIDJob.safeParse({ worker: req.user.id })
@@ -1301,43 +1345,39 @@ export const viewJobs = async (req: Request, res: Response) => {
 
   const { worker } = validatedWorker.data
   const { status } = validatedStatus.data
-  let jobArray = []
 
   try {
     const jobs = await Job.find({ status }).populate("posted").populate("location").sort({ createdAt: -1 })
     if (jobs.length < 1) return res.status(200).json({ success: true, jobs, message: "No jobs available" })
 
-    for (let jobIndex = 0; jobIndex < jobs.length; jobIndex++) {
-      const validatedJob = JobIDJob.safeParse({ job: String(jobs[jobIndex]._id) })
+    for (const job of jobs) {
+      const validatedJob = JobIDJob.safeParse({ job: String(job._id) })
       if (!validatedJob.success) { const errors = validatedJob.error._zod.def; return res.status(400).json({ success: false, message: errors[0].message })}
-
-      const { job } = validatedJob.data
-
-      const isApplied = await Application.findOne({ worker, job })
-      if (!isApplied) {
-        jobArray.push({ info: jobs[jobIndex],
-          IsApplied: false,
-          Accepted: false,
-        })
-      } else {
-        const Accepted = await Application.findOne({ worker, job, status: "Accepted" })
-        if (Accepted) {
-          jobArray.push({ info: jobs[jobIndex],
-            IsApplied: true,
-            Accepted: true
-          })
-        } else {
-          jobArray.push({ info: jobs[jobIndex],
-            IsApplied: true,
-            Accepted: false
-          })
-        }
-      }
     }
+
+    // One query for all of this worker's applications instead of one or two per job:
+    const applications = await Application.find({ worker, job: { $in: jobs.map((job) => job._id) } }).select("job status")
+    const applied = new Set(applications.map((app) => String(app.job)))
+    const accepted = new Set(applications.filter((app) => app.status === "Accepted").map((app) => String(app.job)))
+
+    // Skill match per job (AI-assisted when GEMINI_API_KEY is set); the skill category counts as a skill:
+    const profile = await Worker.findById(worker).select("skills skill")
+    const { ai, matches } = await matchJobsForWorker(
+      [...(profile?.skills || []), ...(profile?.skill ? [profile.skill] : [])],
+      jobs.map((job) => ({ id: String(job._id), skills: job.tags || [] }))
+    )
+
+    const jobArray = jobs.map((job) => ({
+      info: job,
+      IsApplied: applied.has(String(job._id)),
+      Accepted: accepted.has(String(job._id)),
+      match: matches.get(String(job._id)),
+    }))
 
     return res.status(200).json({
       success: true,
-      jobs: jobArray
+      jobs: jobArray,
+      matching: { ai, recommendedScore: RECOMMENDED_SCORE }
     })
   } catch (error) {
     
@@ -1882,7 +1922,7 @@ export const UpdateWorker = async (req: Request, res: Response) => {
     WorkerInfo.name = name || WorkerInfo.name
 
     WorkerInfo.phoneNumber = phoneNumber || WorkerInfo.phoneNumber
-    WorkerInfo.location = location || WorkerInfo.location
+    WorkerInfo.location = filterXSS(location, { whiteList: {}, stripIgnoreTag: true, stripIgnoreTagBody: true }) || WorkerInfo.location
 
     WorkerInfo.jobTitle = jobTitle || WorkerInfo.jobTitle
     WorkerInfo.yearsOfExperience = yearsOfExperience || WorkerInfo.yearsOfExperience

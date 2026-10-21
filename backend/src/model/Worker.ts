@@ -71,7 +71,13 @@ const WorkerSchema: Schema = new Schema({
     }
   ],
   status: { type: String, default: "pending" },
-  reviews: { type: Number, default: 0 }
+  reviews: { type: Number, default: 0 },
+  // Latest automated (AI) verification result; see services/autoVerify.ts
+  verification: { type: Schema.Types.Mixed, default: null },
+  // Last login / authenticated request; used to deactivate accounts idle for 6+ months
+  lastActiveAt: { type: Date },
+  // Why the account was deactivated automatically, e.g. { reason: "inactivity", at }
+  deactivation: { type: Schema.Types.Mixed, default: null }
 }, { timestamps: true })
 
 export default model<IWorker>("Worker", WorkerSchema)

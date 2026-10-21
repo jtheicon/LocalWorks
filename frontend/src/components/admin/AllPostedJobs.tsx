@@ -17,8 +17,9 @@ import CompanyDetailModal from "./CompanyDetailModal";
 
 interface AllPostedJobsProps {
   jobs: Job[];
-  onUpdateStatus: (id: number, status: "accepted" | "rejected") => void;
-  onDelete: (id: number) => void;
+  // Job ids are MongoDB ObjectId strings; statuses match the Job model.
+  onUpdateStatus: (id: string, status: "PENDING" | "ACCEPTED" | "DECLINED") => void;
+  onDelete: (id: string) => void;
 }
 
 const AllPostedJobs = ({ jobs, onUpdateStatus, onDelete }: AllPostedJobsProps) => {
@@ -204,7 +205,6 @@ const AllPostedJobs = ({ jobs, onUpdateStatus, onDelete }: AllPostedJobsProps) =
           )}
           open={companyModalOpen}
           onOpenChange={setCompanyModalOpen}
-          onUpdateStatus={(id, status) => { onUpdateStatus(id, status); toast.success(`Job ${status}`); }}
           status={filter}
           onDelete={(id) => { onDelete(id); toast.success("Job deleted"); }}
         />

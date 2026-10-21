@@ -50,7 +50,9 @@ const JobSchema: Schema = new Schema({
   category: { type: String },
   applyBefore: { type: String, default: "N/A" },
   email: { type: String },
-  phone: { type: String }
+  phone: { type: String },
+  // Latest automated (AI) screening result; see services/autoVerify.ts
+  verification: { type: Schema.Types.Mixed, default: null }
 }, { timestamps: true })
 
 export default model<IJob>("Job", JobSchema)

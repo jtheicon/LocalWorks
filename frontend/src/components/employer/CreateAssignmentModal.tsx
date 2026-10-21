@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { Input } from "../ui/input";
 
 import { Textarea } from "../ui/textarea";
+import { nowInputDateTime, isPastInputValue } from "@/lib/utils";
 
 const CreateAssignmentModal = ({
   open,
@@ -80,6 +81,11 @@ const CreateAssignmentModal = ({
       return;
     }
 
+    if (isPastInputValue(submitBefore, nowInputDateTime())) {
+      toast.error("Submit before date cannot be in the past.");
+      return;
+    }
+
     if (selectedWorkers.length === 0) {
       toast.error("Please select at least one worker.");
       return;
@@ -109,7 +115,6 @@ const CreateAssignmentModal = ({
       toast.success(res.data.message);
       onSuccess();
     } catch (err: any) {
-      alert(submitBefore)
       toast.error(
         err.response?.data?.message ||
         err.response?.data?.info ||
@@ -153,6 +158,7 @@ const CreateAssignmentModal = ({
 
             <Input
               type="datetime-local"
+              min={nowInputDateTime()}
               value={submitBefore}
               onChange={(e) => setSubmitBefore(e.target.value)}
             />

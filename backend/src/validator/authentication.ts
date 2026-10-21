@@ -7,6 +7,12 @@ export const SendEmailOTP = z.object({
   email: z.string("Email must be a string").email("Email must be a valid")
 })
 
+export const VerifyOTP = z.object({
+  email: z.string("Email must be a string").email("Email must be a valid"),
+  otp: z.string("OTP must be a string").regex(/^\d{6}$/, "OTP must be 6 digits"),
+  purpose: z.enum(["register", "password_reset"], "Purpose must be register or password_reset")
+})
+
 export const SendEmailForgotPasswordOTP = z.object({
   email: z.string("Email must be a string").email("Email must be a valid"),
   role: z.enum(["Worker", "Employer"], "Role should be either Worker and Employer")

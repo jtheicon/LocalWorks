@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Facebook, Twitter, Instagram, Mail, Phone, MapPin } from "lucide-react";
 import logo from "@/assets/logo.avif";
 
@@ -108,8 +109,11 @@ const Footer = () => {
         </div>
 
         {/* Bottom Bar */}
-        <div className="mt-12 pt-8 border-t border-background/20 text-center text-background/60">
+        <div className="mt-12 pt-8 border-t border-background/20 flex flex-col items-center gap-2 text-center text-background/60 sm:flex-row sm:justify-between">
           <p>© {new Date().getFullYear()} LocalWorks. All rights reserved.</p>
+          <Link to="/admin" className="text-sm text-background/60 transition-colors hover:text-background hover:underline">
+            Admin Portal
+          </Link>
         </div>
       </div>
     </footer>

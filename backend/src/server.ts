@@ -1,3 +1,4 @@
+import { scheduleAccountCleanup } from "./services/accountCleanup";
 import express from "express";
 import connectDB from "./config/db";
 import authRouter from "./route/authentication"
@@ -180,4 +181,7 @@ server.listen(port, async () => {
   setInterval(() => {
     recordPlatformHealth();
   }, 60000); // every 1 minute
+
+  // Deactivate accounts inactive for 6+ months: shortly after startup, then daily.
+  scheduleAccountCleanup();
 });

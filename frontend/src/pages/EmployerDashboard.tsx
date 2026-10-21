@@ -2,12 +2,13 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Contacts from "@/components/employer/Contacts";
 import { Button } from "@/components/ui/button";
-import { Users, Search, Plus, MessageSquare } from "lucide-react";
+import { Users, Search, Plus, MessageSquare, Briefcase } from "lucide-react";
 import DashboardHeader from "@/components/employer/DashboardHeader";
 import CompanyProfile from "@/components/employer/CompanyProfile";
 import WorkerApplications from "@/components/employer/WorkerApplications";
 import BrowseWorkers from "@/components/employer/BrowseWorkers";
 import PostJobModal from "@/components/employer/PostJobModal";
+import MyJobPosts from "@/components/employer/MyJobPosts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -203,10 +204,15 @@ const EmployerDashboard = () => {
 
         {/* Tabs for Applications, Browse Workers, and Contacts */}
         <Tabs defaultValue="applications" className="w-full">
-          <TabsList className="mb-6">
+          <TabsList className="mb-6 h-auto flex-wrap justify-start gap-1">
             <TabsTrigger value="applications" className="gap-2">
               <Users className="w-4 h-4" />
               Applications
+            </TabsTrigger>
+
+            <TabsTrigger value="jobPosts" className="gap-2">
+              <Briefcase className="w-4 h-4" />
+              My Job Posts
             </TabsTrigger>
 
             <TabsTrigger value="browse" className="gap-2">
@@ -246,6 +252,10 @@ const EmployerDashboard = () => {
 
           <TabsContent value="applications">
             <WorkerApplications />
+          </TabsContent>
+
+          <TabsContent value="jobPosts">
+            <MyJobPosts />
           </TabsContent>
 
           <TabsContent value="browse">

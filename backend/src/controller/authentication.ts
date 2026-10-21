@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { authCookieOptions } from "../config/http";
-import { WorkerRegisterSchema, EmployerSchema, LoginSchema, AdminSchema, AdminLoginSchema, OnlyAccepted, SendEmailOTP, SendEmailForgotPasswordOTP, ForgotPasswordOTP } from "../validator/authentication";
+import { WorkerRegisterSchema, EmployerSchema, LoginSchema, AdminSchema, AdminLoginSchema, OnlyAccepted, SendEmailOTP, SendEmailForgotPasswordOTP, ForgotPasswordOTP, VerifyOTP } from "../validator/authentication";
 import jwt from "jsonwebtoken"
 import Worker from "../model/Worker";
 import { instanceErrors, mainError } from "../errors/showErrors";
@@ -22,17 +22,18 @@ import VerifiedWorker from "../model/VerifiedWorker";
 import JobsCompleted from "../model/JobsCompleted";
 import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
-import nodemailer from 'nodemailer';
 import { uploadPermits } from "../file/upload";
-
-// Source: https://medium.com/@yshashi30/introduction-5f864164610d
-// Generate OTP
+import { issueOTP, verifyOTP, assertVerifiedEmail, OTPError } from "../services/emailOtp";
+import { autoVerifyEmployer, autoVerifyWorker, runInBackground } from "../services/autoVerify";
+import { isEmailTaken, releaseDeletedAccount } from "../services/accounts";
+import { touchActivity } from "../services/accountCleanup";
 
 // Source that resolved "Error: Invalid login: 535-5.7.8 Username and Password not accepted."
 // Link: https://laravelmail.com/blog/458-i-get-a-error-error-invalid-login-535-578-username/?srsltid=AfmBOor_5OgrHjOqJPiYk4AjAadRHtLMvX37IqiCdKApMZZre-Lbq7eI
 
-function generateOTP() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+const otpError = (error: unknown, res: Response) => {
+  if (error instanceof OTPError) return res.status(error.status).json({ success: false, info: error.message, message: error.message })
+  return mainError(error, res)
 }
 
 
@@ -47,27 +48,6 @@ export const RegexFunction = async (req: Request, res: Response) => {
   } catch (error) {
     mainError(error, res)
   }
-}
-
-// Source - https://stackoverflow.com/a/72279819
-// Posted by DariusV
-// Retrieved 2026-08-14, License - CC BY-SA 4.0 - Just a Guide. But not fully implemented.
-
-const SendEmail = async (to: string, subject: string, text: string) => {
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-
-  await transporter.sendMail({
-    from: process.env.EMAIL_OWNER,
-    to,
-    subject,
-    text,
-  });
 }
 
 const jaro = stringComparison.jaroWinkler;
@@ -115,21 +95,34 @@ export const HandleOTPVerification = async (req: Request, res: Response) => {
   const { email } = validatedData.data;
 
   try {
-    const otp = generateOTP()
+    if (await isEmailTaken(email)) {
+      return res.status(400).json({ success: false, info: "Email is already registered" })
+    }
 
-    
-    // Source: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/setMinutes:
-    // Tested via: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/setMinutes && Online JS Compiler: https://www.programiz.com/javascript/online-compiler/
-    const newDate = new Date().setMinutes(new Date().getMinutes() + 1)
-    SendEmail(email, "Email Verification", `Your OTP is ${otp}. It will expire in 60 seconds.`)
-
-    console.log(new Date(), new Date(newDate))
-
-    return res.status(200).json({
-      success: true, otp, newDate
-    })
+    // The code is emailed only; it is never returned to the browser.
+    const expiresAt = await issueOTP(email, "register")
+    return res.status(200).json({ success: true, expiresAt })
   } catch (error) {
-    mainError(error, res)
+    otpError(error, res)
+  }
+}
+
+// [Global] - Verify OTP: checks the code server-side and returns a short-lived token
+// that the register / password-reset request must include.
+export const VerifyOTPController = async (req: Request, res: Response) => {
+  const validatedData = VerifyOTP.safeParse(req.body)
+
+  if (!validatedData.success) {
+    return res.status(400).json({ success: false, info: validatedData.error.issues[0].message })
+  }
+
+  const { email, otp, purpose } = validatedData.data
+
+  try {
+    const token = await verifyOTP(email, purpose, otp)
+    return res.status(200).json({ success: true, token })
+  } catch (error) {
+    otpError(error, res)
   }
 }
 
@@ -149,7 +142,7 @@ export const HandleOTPPasswordVerification = async (req: Request, res: Response)
 
   try {
     if (role === "Worker") {
-      userInfo = await Worker.findOne({ email })
+      userInfo = await Worker.findOne({ email, status: { $ne: "deleted" } })
       if (!userInfo) {
         return res.status(404).json({
           success: false,
@@ -157,7 +150,7 @@ export const HandleOTPPasswordVerification = async (req: Request, res: Response)
         })
       }
     } else {
-      userInfo = await Employer.findOne({ email })
+      userInfo = await Employer.findOne({ email, status: { $ne: "deleted" } })
       if (!userInfo) {
         return res.status(404).json({
           success: false,
@@ -166,21 +159,10 @@ export const HandleOTPPasswordVerification = async (req: Request, res: Response)
       }
     }
 
-    const otp = generateOTP()
-
-    
-    // Source: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/setMinutes:
-    // Tested via: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/setMinutes && Online JS Compiler: https://www.programiz.com/javascript/online-compiler/
-    const newDate = new Date().setMinutes(new Date().getMinutes() + 1)
-    SendEmail(email, "Email Verification", `Your OTP is ${otp}. It will expire in 60 seconds.`)
-
-    console.log(new Date(), new Date(newDate))
-
-    return res.status(200).json({
-      success: true, otp, newDate
-    })
+    const expiresAt = await issueOTP(email, "password_reset")
+    return res.status(200).json({ success: true, expiresAt })
   } catch (error) {
-    mainError(error, res)
+    otpError(error, res)
   }
 }
 
@@ -199,9 +181,10 @@ export const ForgotPassword = async (req: Request, res: Response) => {
   const { email, create_password, confirm_password, role } = data.data;
   let userData;
 
-  console.log(email, create_password, confirm_password, role)
-
   try {
+    // Without this, anyone could reset any account's password by knowing its email.
+    assertVerifiedEmail(req.body.resetToken, email, "password_reset")
+
     if (create_password !== confirm_password) {
       console.error("Password do not match")
 
@@ -212,9 +195,9 @@ export const ForgotPassword = async (req: Request, res: Response) => {
     }
 
     if (role === "Worker") {
-      userData = await Worker.findOne({ email })
+      userData = await Worker.findOne({ email, status: { $ne: "deleted" } })
     } else {
-      userData = await Employer.findOne({ email })
+      userData = await Employer.findOne({ email, status: { $ne: "deleted" } })
     }
 
     if (!userData) {
@@ -232,15 +215,12 @@ export const ForgotPassword = async (req: Request, res: Response) => {
     userData.password = hashedPassword;
     await userData.save();
 
-    console.log(userData)
-
     return res.status(200).json({
       success: true,
       info: "Password successfully updated!"
     })
   } catch (error) {
-    console.error(error)
-    mainError(error, res)
+    otpError(error, res)
   }
 }
 
@@ -394,6 +374,9 @@ export const WorkerRegister = async (req: Request, res: Response) => {
       photo: photoFile,
     } = validatedData.data;
 
+    assertVerifiedEmail(req.body.emailToken, email, "register");
+    await releaseDeletedAccount(email, name);
+
     const hash = await bcrypt.hash(password, 12);
 
     const newWorker = new Worker({
@@ -419,11 +402,8 @@ export const WorkerRegister = async (req: Request, res: Response) => {
 
     await newWorker.save();
 
-    const notification = await AdminNotification.create(
-      WorkerRegisterPayload(name, new Date())
-    );
-
-    io.to("admins").emit("notification:new", notification)
+    // AI checks the resume; the admin is only notified if it can't approve.
+    runInBackground("worker verification", () => autoVerifyWorker(newWorker._id.toString()));
 
     // // const token = jwt.sign(
     // //   {
@@ -444,9 +424,10 @@ export const WorkerRegister = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       success: true,
-      message: "Worker Successfully Registered!",
+      message: "Worker Successfully Registered! We're verifying your resume and will email you once your account is active (usually within a few minutes).",
     });
   } catch (error) {
+    if (error instanceof OTPError) return otpError(error, res);
     instanceErrors(error, res);
   }
 };
@@ -504,9 +485,10 @@ export const EmployerRegister = async (req: Request, res: Response) => {
 
   const CompanyName = normalize(companyFilterXSS);
 
-  console.log(validatedData.data, "Request not empty")
-
   try {
+    assertVerifiedEmail(req.body.emailToken, email, "register");
+    await releaseDeletedAccount(email);
+
     let finalIndustry = industry;
 
     if (industryTitle?.trim()) {
@@ -599,6 +581,9 @@ export const EmployerRegister = async (req: Request, res: Response) => {
 
     await newEmployer.save();
 
+    // AI checks the business permit / DTI document; the admin is only notified if it can't approve.
+    runInBackground("employer verification", () => autoVerifyEmployer(newEmployer._id.toString()));
+
     // // const token = jwt.sign(
     // //   {
     // //     id: newEmployer._id,
@@ -618,9 +603,10 @@ export const EmployerRegister = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: "Employer Registered Successfully!",
+      message: "Employer Registered Successfully! We're verifying your business document and will email you once your account is active (usually within a few minutes).",
     });
   } catch (error) {
+    if (error instanceof OTPError) return otpError(error, res);
     instanceErrors(error, res);
   }
 };
@@ -665,7 +651,17 @@ export const EmployerLogin = async (req: Request, res: Response) => {
     const verify = await Employer.findOne({ email: user.email, role })
     if (!verify) return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
 
-    if (user.status === "deleted" || user.status === "pending" || user.status === "not_active") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
+    // Only reached after the password matched, so this does not reveal accounts to guessers.
+    if (user.status === "pending") return res.status(403).json({ success: false, message: "Your account is still being verified. We will email you once it is active." })
+    // Deactivated automatically for 6+ months of inactivity: logging in with the right password reactivates it.
+    // Accounts deactivated by an admin (no inactivity reason) stay blocked.
+    if (user.status === "not_active" && user.get("deactivation")?.reason === "inactivity") {
+      user.status = "active"
+      user.set("deactivation", null)
+      await user.save()
+    }
+    if (user.status === "deleted" || user.status === "not_active") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
+    touchActivity(String(user._id), user.role, true)
 
     // console.log({
     //   id: user._id,
@@ -713,7 +709,17 @@ export const WorkerLogin = async (req: Request, res: Response) => {
     const verify = await Worker.findOne({ email: user.email, role })
     if (!verify) return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
     
-    if (user.status === "deleted" || user.status === "pending" || user.status === "not_active") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
+    // Only reached after the password matched, so this does not reveal accounts to guessers.
+    if (user.status === "pending") return res.status(403).json({ success: false, message: "Your account is still being verified. We will email you once it is active." })
+    // Deactivated automatically for 6+ months of inactivity: logging in with the right password reactivates it.
+    // Accounts deactivated by an admin (no inactivity reason) stay blocked.
+    if (user.status === "not_active" && user.get("deactivation")?.reason === "inactivity") {
+      user.status = "active"
+      user.set("deactivation", null)
+      await user.save()
+    }
+    if (user.status === "deleted" || user.status === "not_active") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
+    touchActivity(String(user._id), user.role, true)
 
     const token = jwt.sign({ id: user._id, name: user.name, role: user.role, status: user.status, email: user.email }, process.env.JWT_SECRET as string, {
       expiresIn: '1h'

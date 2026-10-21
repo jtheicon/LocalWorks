@@ -1,4 +1,5 @@
 import { TotalWorkers, PendingWorkers, VerifiedWorkers, DeclinedWorkers, NewSkillController, UpdateJobStatus, WorkersEmployers, Dashboard, ViewJobsNew, AddNewIndustry, Profiles, UpdateWorkersEmployersInformation, DeleteWorkerEmployer, Reports, Applications, AdminNotifications, MarkAsReadAdmin, markNotificationsAsRead, deleteAdminNotifSchema, Profile, WorkerVerification, UpdateReportStatus, UpdatePass } from "../controller/admin";
+import { Analytics, CleanupPreview, RunCleanup } from "../controller/analytics";
 import { Router } from "express";
 import authorized from "../middleware/authorized";
 import { admin } from "../middleware/roles";
@@ -7,6 +8,9 @@ const router = Router()
 
 // GET Routes:
 router.get("/dashboard", authorized, admin, Dashboard)
+router.get("/analytics", authorized, admin, Analytics)
+router.get("/cleanup/preview", authorized, admin, CleanupPreview)
+router.post("/cleanup/run", authorized, admin, RunCleanup)
 router.get("/profiles/:role", authorized, admin, Profiles)
 router.get("/workers", authorized, admin, TotalWorkers)
 router.get("/workers/pending", authorized, admin, PendingWorkers)

@@ -46,6 +46,8 @@ import {
 } from "@/components/ui/dialog";
 
 import { Input } from "@/components/ui/input";
+import { todayInputDate } from "@/lib/utils";
+import CredibilityBadge, { useCredibility } from "@/components/CredibilityBadge";
 
 axios.defaults.withCredentials = true;
 
@@ -449,6 +451,7 @@ const WorkerApplications = () => {
                     style={styleDate}
                     type="date"
                     id="interviewDate"
+                    min={todayInputDate()}
                     value={dateInput}
                     onChange={(e) => setDateInput(e.target.value)}
                   />
@@ -575,6 +578,11 @@ const ApplicationSection = ({
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const [applicationToWithdraw, setApplicationToWithdraw] = useState(null);
 
+  const { data: workerScores = {} } = useCredibility(
+    "worker",
+    applications.map((a: any) => a.worker?._id)
+  );
+
   const handleViewEmployerConversation = async (application) => {
     await axios.get("http://localhost:8920/api/pro/responses/" + application._id)
       .then(function (response) {
@@ -635,6 +643,9 @@ const ApplicationSection = ({
                     <span className="text-sm font-medium">
                       {application.worker.rating}
                     </span>
+                  </div>
+                  <div className="mt-2">
+                    <CredibilityBadge credibility={workerScores[application.worker._id]} subject="Worker" />
                   </div>
                 </div>
                 {getStatusBadge(application.status)}

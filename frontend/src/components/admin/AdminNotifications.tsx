@@ -246,7 +246,7 @@ const AdminNotifications = () => {
                 <TabsTrigger
                   key={tab.value}
                   value={tab.value}
-                  className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-full px-4 py-1.5 text-sm data-[state=inactive]:bg-transparent data-[state=inactive]:text-muted-foreground"
+                  className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-full px-4 py-1.5 text-sm data-[state=inactive]:bg-transparent data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:bg-muted data-[state=inactive]:hover:text-foreground data-[state=active]:hover:bg-primary/90"
                 >
                   {tab.label}
                 </TabsTrigger>

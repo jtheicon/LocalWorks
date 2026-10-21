@@ -38,7 +38,7 @@ const initialApplications: Application[] = [
     location: "Downtown, Metro City",
     appliedDate: "Jan 28, 2026",
     status: "pending",
-    salary: "$18-25/hr",
+    salary: "₱600-800/day",
   },
   {
     id: 2,
@@ -47,7 +47,7 @@ const initialApplications: Application[] = [
     location: "Industrial Zone",
     appliedDate: "Jan 25, 2026",
     status: "interview",
-    salary: "$16-18/hr",
+    salary: "₱550-600/day",
     interviewDate: "Feb 3, 2026",
   },
   {
@@ -57,7 +57,7 @@ const initialApplications: Application[] = [
     location: "Eastside District",
     appliedDate: "Jan 20, 2026",
     status: "accepted",
-    salary: "$15-20/hr",
+    salary: "₱500-650/day",
   },
   {
     id: 4,
@@ -66,7 +66,7 @@ const initialApplications: Application[] = [
     location: "Multiple Sites",
     appliedDate: "Jan 15, 2026",
     status: "rejected",
-    salary: "$14-18/hr",
+    salary: "₱450-600/day",
   },
 ];
 

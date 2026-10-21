@@ -2,7 +2,15 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Badge, Calendar, Download } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, FileDown, Loader2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, Cell,
@@ -11,7 +19,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Job } from "@/lib/jobsStore";
-import { exportToCSV } from "@/lib/csvExport";
+import { exportReport, hasReportData, type ExportFormat, type SystemReport } from "@/lib/reportExport";
 import { toast } from "sonner";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
@@ -60,6 +68,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
   const [SubmitEvidence, SetSubmitEvidence] = useState([])
   const [Sender, SetSender] = useState(null)
   const [ID, SetID] = useState(null)
+  const [exporting, setExporting] = useState<ExportFormat | null>(null)
 
   const fetchReports = async () => {
     const res = await axios.get(
@@ -144,38 +153,100 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
     categoryTable = [],
   } = data || {};
 
-  const handleExport = () => {
-    exportToCSV(
-      jobs.map(({ _id, title, company, location, salary, type, posted, status }) => ({
-        _id, title, company, location, salary, type, posted: posted.email, status: status || "pending",
-      })),
-      "reports"
-    );
-    toast.success("Report exported successfully!");
+  const buildReport = (last30Days: boolean): SystemReport => {
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const inRange = (date?: string) => !last30Days || (!!date && new Date(date) >= since);
+
+    const rangeJobs = jobs.filter((job) => inRange(job.createdAt));
+    const rangeIncidents = (data?.ReportedWorkers ?? []).filter((r: any) => inRange(r.createdAt));
+    const count = (status: string) => rangeJobs.filter((j) => j.status === status).length;
+
+    return {
+      title: last30Days ? "System Report - Last 30 Days" : "System Report - All Time",
+      subtitle: last30Days
+        ? `Covering ${since.toLocaleDateString()} to ${new Date().toLocaleDateString()}`
+        : undefined,
+      summary: [
+        ["Total Jobs Posted", rangeJobs.length],
+        ["Accepted", count("ACCEPTED")],
+        ["Pending", count("PENDING")],
+        ["Rejected", count("DECLINED")],
+        ["Fill Rate", `${rangeJobs.length ? Math.round((count("ACCEPTED") / rangeJobs.length) * 100) : 0}%`],
+        ["Incident Reports", rangeIncidents.length],
+        ["Verification Rate", `${health?.data?.verificationRate ?? 0}%`],
+        ["Average Match Time", `${health?.data?.averageMatchTime ?? 0} hrs`],
+        ["Average Response Time", `${health?.data?.averageResponseTime ?? 0} mins`],
+        ["Platform Uptime", `${health?.data?.platformUptime ?? 0}%`],
+      ],
+      sections: [
+        {
+          title: "Posted Jobs",
+          rows: rangeJobs.map(({ _id, title, company, location, salary, type, posted, status, createdAt }) => ({
+            _id,
+            title,
+            company,
+            location,
+            salary,
+            type,
+            postedBy: posted?.email ?? "",
+            status: status || "pending",
+            datePosted: createdAt ? new Date(createdAt).toLocaleDateString() : "",
+          })),
+        },
+        {
+          title: "Category Data",
+          rows: categoryTable.map((c: any) => ({
+            category: c.name,
+            activeJobs: c.activeJobs,
+            totalApplications: c.totalApplications,
+            acceptanceRate: `${c.acceptanceRate}%`,
+          })),
+        },
+        {
+          title: "Incident Reports",
+          rows: rangeIncidents.map((r: any) => ({
+            type: r.reportType,
+            description: r.description,
+            worker: r.workerId?.email ?? "",
+            employer: r.employerId?.email ?? "",
+            sentBy: r.sentBy ?? "",
+            status: r.status,
+            date: new Date(r.createdAt).toLocaleDateString(),
+          })),
+        },
+      ],
+    };
   };
 
-  const handleExport30Days = () => {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const handleExport = async (format: ExportFormat, last30Days: boolean) => {
+    const report = buildReport(last30Days);
+    if (!hasReportData(report)) {
+      toast.info("No data to export for this period.");
+      return;
+    }
+    if (format === "csv" && report.sections[0].rows.length === 0) {
+      toast.info("No jobs to export for this period. Try Excel or PDF for the full report.");
+      return;
+    }
 
-    exportToCSV(
-      jobs
-        .filter((job) => new Date(job.createdAt) >= thirtyDaysAgo) // replace postedAt with your date field
-        .map(({ _id, title, company, location, salary, type, posted, status }) => ({
-          _id,
-          title,
-          company,
-          location,
-          salary,
-          type,
-          posted: posted.email,
-          status: status || "pending",
-        })),
-      "reports-last-30-days"
-    );
-
-    toast.success("Last 30 days report exported successfully!");
+    setExporting(format);
+    try {
+      await exportReport(report, last30Days ? "system-report-last-30-days" : "system-report", format);
+      toast.success(`${format === "excel" ? "Excel" : format.toUpperCase()} report exported successfully!`);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to export report.");
+    } finally {
+      setExporting(null);
+    }
   };
+
+  const exportOptions: { format: ExportFormat; label: string; icon: typeof FileText }[] = [
+    { format: "pdf", label: "Printable PDF", icon: FileText },
+    { format: "excel", label: "Excel (.xlsx)", icon: FileSpreadsheet },
+    { format: "csv", label: "CSV (jobs only)", icon: FileDown },
+  ];
 
   return (
     <main className="flex-1 p-6 space-y-6 overflow-auto">
@@ -185,16 +256,33 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
           <h2 className="text-xl font-bold text-foreground">Detailed Reports & Analytics</h2>
           <p className="text-sm text-muted-foreground">Analyze application performance and trends</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2 text-sm" onClick={handleExport}>
-            <Download className="w-4 h-4" />
-            Export
-          </Button>
-          <Button variant="outline" size="sm" className="gap-2 text-sm" onClick={handleExport30Days}>
-            <Calendar className="w-4 h-4" />
-            Last 30 Days
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" className="gap-2 text-sm" disabled={exporting !== null}>
+              {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              {exporting ? "Exporting..." : "Export Report"}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            {[false, true].map((last30Days, i) => (
+              <div key={String(last30Days)}>
+                {i > 0 && <DropdownMenuSeparator />}
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  {last30Days ? "Last 30 Days" : "All Time"}
+                </DropdownMenuLabel>
+                {exportOptions.map(({ format, label, icon: Icon }) => (
+                  <DropdownMenuItem
+                    key={format}
+                    onSelect={() => handleExport(format, last30Days)}
+                  >
+                    <Icon className="mr-2 h-4 w-4" />
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </div>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Tabs */}
@@ -209,7 +297,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
             <TabsTrigger
               key={tab.value}
               value={tab.value}
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-primary px-4 pb-2 text-sm"
+              className="rounded-none border-b-2 border-transparent hover:bg-transparent hover:text-foreground hover:border-border data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:hover:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-primary data-[state=active]:font-semibold px-4 pb-2 text-sm"
             >
               {tab.label}
             </TabsTrigger>
