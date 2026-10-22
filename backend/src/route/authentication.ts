@@ -3,8 +3,16 @@ import { WorkerRegister, displayFile, AdminRegister, AdminLogin, EmployerRegiste
 import rateLimit from "express-rate-limit";
 import { uploadEmployerPermit, uploadFiles } from "../file/upload";
 import { createCompany } from "../controller/authentication";
+import { ScanPermit, ScanResume } from "../controller/signupDocument";
 
 const router = Router()
+
+// Every scan is an AI call, so keep it well under the free-tier quota.
+const documentScanLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { success: false, message: "Too many document uploads. Please try again in 15 minutes." },
+})
 
 // // Display the total workers:
 router.get("/display", displayFile)
@@ -29,6 +37,10 @@ router.post("/admin/register", AdminRegister)
 
 
 
+// Sign-up documents: AI verifies the file and returns the fields to pre-fill the form.
+router.post("/signup/resume", documentScanLimiter, ScanResume)
+router.post("/signup/permit", documentScanLimiter, ScanPermit)
+
 // Register User:
 router.post("/employer/register", EmployerRegister)
 router.post("/upload/permit", PermitPost)
@@ -36,8 +48,8 @@ router.post("/upload/permit", PermitPost)
 
 // Register User:
 router.post("/worker/register",
+  // The resume was already uploaded and verified through /signup/resume.
   uploadFiles.fields([
-    { name: "resume", maxCount: 1 }, // Required
     { name: "photo", maxCount: 1 },  // Optional
   ]),
 

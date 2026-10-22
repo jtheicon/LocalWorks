@@ -38,12 +38,14 @@ const DEFAULT_CATEGORIES = [
 const PAY_FREQUENCIES = [
   { value: "Daily", suffix: "day" },
   { value: "Weekly", suffix: "week" },
+  { value: "Semi-Monthly", suffix: "semi-monthly" }, // paid twice a month (15th and 30th)
   { value: "Monthly", suffix: "month" },
 ] as const;
 
 type PayFrequency = (typeof PAY_FREQUENCIES)[number]["value"];
 
-// e.g. 15000 + "Monthly" -> "₱15,000/month" (salary is stored as a string on the Job model)
+// e.g. 15000 + "Monthly" -> "₱15,000/month", 7500 + "Semi-Monthly" -> "₱7,500/semi-monthly"
+// (salary is stored as a string on the Job model)
 const formatSalary = (amount: string, frequency: PayFrequency) => {
   const suffix = PAY_FREQUENCIES.find((f) => f.value === frequency)?.suffix;
   return `₱${Number(amount).toLocaleString("en-PH")}/${suffix}`;
@@ -97,7 +99,10 @@ const isInputDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value || "");
 const parseSalary = (salary: string) => {
   const amount = (salary || "").replace(/,/g, "").match(/\d+(\.\d+)?/)?.[0] ?? "";
   const lower = (salary || "").toLowerCase();
-  const payFrequency: PayFrequency = lower.includes("day") ? "Daily" : lower.includes("week") ? "Weekly" : "Monthly";
+  // "semi" is checked first because "semi-monthly" also contains "month".
+  const payFrequency: PayFrequency = lower.includes("semi")
+    ? "Semi-Monthly"
+    : lower.includes("day") ? "Daily" : lower.includes("week") ? "Weekly" : "Monthly";
   return { salaryAmount: amount, payFrequency };
 };
 
@@ -433,7 +438,7 @@ const PostJobModal = ({ open, onOpenChange, job = null }: PostJobModalProps) => 
                       setFormData({ ...formData, payFrequency: value as PayFrequency })
                     }
                   >
-                    <SelectTrigger className="w-[120px]" aria-label="Pay frequency">
+                    <SelectTrigger className="w-[140px]" aria-label="Pay frequency">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

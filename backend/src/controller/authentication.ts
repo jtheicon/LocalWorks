@@ -24,7 +24,7 @@ import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { uploadPermits } from "../file/upload";
 import { issueOTP, verifyOTP, assertVerifiedEmail, OTPError } from "../services/emailOtp";
-import { autoVerifyEmployer, autoVerifyWorker, runInBackground } from "../services/autoVerify";
+import { namesMatch, readSignupDocumentToken, SignupDocumentError } from "../services/signupDocument";
 import { isEmailTaken, releaseDeletedAccount } from "../services/accounts";
 import { touchActivity } from "../services/accountCleanup";
 
@@ -343,8 +343,10 @@ export const WorkerRegister = async (req: Request, res: Response) => {
       [fieldname: string]: Express.Multer.File[];
     };
 
-    const resume = files?.resume?.[0];
     const photo = files?.photo?.[0];
+
+    // The resume was uploaded and verified by AI before the form was filled in.
+    const resume = readSignupDocumentToken(req.body.documentToken, "resume");
 
     const payload = {
       ...req.body,
@@ -375,6 +377,14 @@ export const WorkerRegister = async (req: Request, res: Response) => {
     } = validatedData.data;
 
     assertVerifiedEmail(req.body.emailToken, email, "register");
+
+    if (!namesMatch(name, resume.name, "resume")) {
+      return res.status(400).json({
+        success: false,
+        message: `The name you entered doesn't match the name on your resume (${resume.name}).`,
+      });
+    }
+
     await releaseDeletedAccount(email, name);
 
     const hash = await bcrypt.hash(password, 12);
@@ -390,20 +400,13 @@ export const WorkerRegister = async (req: Request, res: Response) => {
       jobTitle,
       resume: resumeFile,
       photo: photoFile,
+      // Verified resume + matching name: active right away, no admin approval.
+      status: "active",
+      verification: resume.verification,
     });
 
-        // REQUIRED RESUME CHECK
-    if (!resume) {
-      return res.status(400).json({
-        success: false,
-        message: "Resume is required",
-      });
-    }
-
     await newWorker.save();
-
-    // AI checks the resume; the admin is only notified if it can't approve.
-    runInBackground("worker verification", () => autoVerifyWorker(newWorker._id.toString()));
+    await VerifiedWorker.create({ worker: newWorker._id });
 
     // // const token = jwt.sign(
     // //   {
@@ -424,10 +427,11 @@ export const WorkerRegister = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       success: true,
-      message: "Worker Successfully Registered! We're verifying your resume and will email you once your account is active (usually within a few minutes).",
+      message: "Worker Successfully Registered! Your resume was verified and your account is active. You can log in now.",
     });
   } catch (error) {
     if (error instanceof OTPError) return otpError(error, res);
+    if (error instanceof SignupDocumentError) return res.status(error.status).json({ success: false, message: error.message });
     instanceErrors(error, res);
   }
 };
@@ -468,7 +472,7 @@ export const EmployerRegister = async (req: Request, res: Response) => {
     });
   }
 
-  const { company, email, password, phone, industry, industryTitle, permit } = validatedData.data;
+  const { company, email, password, phone, industry, industryTitle } = validatedData.data;
 
   const companyFilterXSS = filterXSS(company, {
     whiteList: {},
@@ -487,6 +491,17 @@ export const EmployerRegister = async (req: Request, res: Response) => {
 
   try {
     assertVerifiedEmail(req.body.emailToken, email, "register");
+
+    // The permit was uploaded and verified by AI before the form was filled in.
+    const permit = readSignupDocumentToken(req.body.documentToken, "permit");
+
+    if (!namesMatch(companyFilterXSS, permit.name, "permit")) {
+      return res.status(400).json({
+        success: false,
+        message: `The company name you entered doesn't match the name on your permit (${permit.name}).`,
+      });
+    }
+
     await releaseDeletedAccount(email);
 
     let finalIndustry = industry;
@@ -563,26 +578,19 @@ export const EmployerRegister = async (req: Request, res: Response) => {
     const salt = await bcrypt.genSalt(12);
     const hash = await bcrypt.hash(password, salt);
 
-    if (!permit) {
-      return res.status(400).json({
-        success: false,
-        message: "Business permit is required",
-      });
-    }
-
     const newEmployer = new Employer({
       company: finalCompanyName,
       email,
       password: hash,
       phone,
       industry: finalIndustry,
-      permit,
+      permit: permit.filename,
+      // Verified permit + matching company name: active right away, no admin approval.
+      status: "active",
+      verification: permit.verification,
     });
 
     await newEmployer.save();
-
-    // AI checks the business permit / DTI document; the admin is only notified if it can't approve.
-    runInBackground("employer verification", () => autoVerifyEmployer(newEmployer._id.toString()));
 
     // // const token = jwt.sign(
     // //   {
@@ -603,10 +611,11 @@ export const EmployerRegister = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      message: "Employer Registered Successfully! We're verifying your business document and will email you once your account is active (usually within a few minutes).",
+      message: "Employer Registered Successfully! Your business permit was verified and your account is active. You can log in now.",
     });
   } catch (error) {
     if (error instanceof OTPError) return otpError(error, res);
+    if (error instanceof SignupDocumentError) return res.status(error.status).json({ success: false, message: error.message });
     instanceErrors(error, res);
   }
 };

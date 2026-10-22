@@ -32,30 +32,6 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
   const { data: scores = {} } = useCredibility(user?.role ?? "worker", open ? [user?._id] : []);
   const credibility = user?._id ? scores[user._id] : undefined;
 
-  const VerifyWorker = async (worker: string) => {
-    try {
-      const response = await axios.post(
-        "http://localhost:8920/api/admin/verify/worker",
-        { worker },
-        { withCredentials: true }
-      );
-
-      toast.success(response.data.message, {
-        description: "Worker has been verified successfully.",
-      });
-
-      onOpenChange(false);
-
-      await queryClient.invalidateQueries({
-        queryKey: ["AdminProfilesInfo"],
-      });
-    } catch (error: any) {
-      if (error.response) {
-        toast.info(error.response.data.message);
-      }
-    }
-  };
-
   const UpdateWorkerEmployer = async (_id, status, role) => {
     try {
       const response = await axios.put(
@@ -297,9 +273,10 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
             )}
           </div>
 
-          {/* Actions */}
+          {/* Actions: accounts are approved automatically by AI at sign-up, so the admin
+              only moderates (re-activate a deactivated account, deactivate, delete). */}
           <div className="flex gap-2 pt-2">
-            {user.status !== "active" && (
+            {user.status === "not_active" && (
               <Button
                 size="sm"
                 className="flex-1"
@@ -327,16 +304,6 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
             >
               Delete
             </Button>
-
-            {user.role === "worker" && !user.isVerified && (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => VerifyWorker(user._id)}
-              >
-                Verify Worker
-              </Button>
-            )}
 
             {user.role === "worker" && user.isVerified && (
               <Badge className="bg-green-500/10 text-green-600 border-green-500/20">

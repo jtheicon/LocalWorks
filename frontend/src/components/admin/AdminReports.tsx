@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Job } from "@/lib/jobsStore";
 import { exportReport, hasReportData, type ExportFormat, type SystemReport } from "@/lib/reportExport";
+import { ANALYTICS_QUERY_KEY, dashboardReportCharts, dashboardSummary, fetchAdminAnalytics } from "@/lib/dashboardCharts";
 import { toast } from "sonner";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
@@ -232,6 +233,16 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
 
     setExporting(format);
     try {
+      if (format === "pdf") {
+        // Same data and charts as the Dashboard tab (cached if the dashboard was already opened).
+        const analytics = await queryClient.fetchQuery({
+          queryKey: ANALYTICS_QUERY_KEY,
+          queryFn: fetchAdminAnalytics,
+        });
+        report.summary = [...dashboardSummary(analytics), ...(report.summary ?? [])];
+        report.charts = { title: "Platform Overview (Dashboard)", items: dashboardReportCharts(analytics) };
+      }
+
       await exportReport(report, last30Days ? "system-report-last-30-days" : "system-report", format);
       toast.success(`${format === "excel" ? "Excel" : format.toUpperCase()} report exported successfully!`);
     } catch (err) {

@@ -12,14 +12,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import FileUpload from "./FileUpload";
 import OTPVerification from "./OTPVerification";
+import DocumentScanUpload, { DocumentScanResult } from "./DocumentScanUpload";
+import { matchOption, toEmail, toLocalMobile, toPlainText } from "./autofill";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
 
 interface EmployerSignUpFormProps {
   onClose: () => void;
+}
+
+// Details the AI read from the uploaded business permit.
+interface PermitFields {
+  business_name: string;
+  phone: string;
+  email: string;
+  industry: string;
 }
 
 const EmployerSignUpForm = ({ onClose }: EmployerSignUpFormProps) => {
@@ -35,7 +44,9 @@ const EmployerSignUpForm = ({ onClose }: EmployerSignUpFormProps) => {
 
   // Server-issued proof that the email was verified; required by the register endpoint.
   const [emailToken, setEmailToken] = useState("");
-    
+  // Whether the email was filled in from the permit, to tell the user what to do next.
+  const [emailAutofill, setEmailAutofill] = useState<"filled" | "missing" | null>(null);
+
   const [formData, setFormData] = useState({
     company: "",
     email: "",
@@ -46,71 +57,49 @@ const EmployerSignUpForm = ({ onClose }: EmployerSignUpFormProps) => {
     industryTitle: "No Industry Title Provided",
   });
   
-  const [files, setFiles] = useState<{
-    permit: File | null;
-  }>({
-    permit: null,
-  });
+  // Signed proof that the permit was verified by AI; required by the register endpoint.
+  const [documentToken, setDocumentToken] = useState("");
 
 const Register = async () => {
-  if (!files.permit || files.permit.size === 0) {
+  if (!documentToken) {
     toast({
       title: "No Business Permit Included",
-      description: "Please enter a valid business permit",
+      description: "Please upload your business permit and wait for it to be verified.",
       variant: "destructive"
     })
     return;
   }
 
-  const formDataToSend = new FormData();
-  
-  formDataToSend.append("permit", files.permit)
+  // The permit itself was already uploaded and verified in step 1.
+  await axios.post(
+    "http://localhost:8920/api/auth/employer/register",
+    {
+      company: formData.company,
+      email: formData.email,
+      password: formData.password,
+      phone: `+63${formData.phone}`,
+      industry: formData.industry,
+      // Only a custom industry needs a title; a listed one is sent by id.
+      ...(formData.industry === "others" ? { industryTitle: formData.industryTitle } : {}),
+      documentToken,
+      emailToken,
+    },
+    {
+      withCredentials: true
+    }
+  )
+    .then(function (response) {
+      toast({
+        title: "Success",
+        description: response.data.message
+      });
 
-  await axios.post("http://localhost:8920/api/auth/upload/permit", formDataToSend, {
-    withCredentials: true
-  })
-    .then(async function (response) {
-      await axios.post(
-        "http://localhost:8920/api/auth/employer/register",
-        {
-          company: formData.company,
-          email: formData.email,
-          password: formData.password,
-          phone: `+63${formData.phone}`,
-          industry: formData.industry,
-          industryTitle: formData.industryTitle,
-          permit: response.data.filename.filename,
-          emailToken,
-        },
-        {
-          withCredentials: true
-        }
-      )
-        .then(function (response) {
-          toast({
-            title: "Success",
-            description: response.data.message
-          });
-
-          onClose()
-        })
-        .catch(function (error) {
-          toast({
-            title: "An error occured",
-            description: error.response.data.message,
-            variant: "destructive"
-          })
-        })
+      onClose()
     })
     .catch(function (error) {
-      let description = ""
-      if (error.response.data.errors.code === "LIMIT_FILE_SIZE") {
-        description = "The file you are sending is too large, it should be a maximum of 15 MB"
-      }
-
       toast({
         title: "An error occured",
-        description,
+        description: error.response?.data?.message || error.response?.data?.info,
         variant: "destructive"
       })
     })
@@ -131,11 +120,39 @@ const Register = async () => {
 
   const industryOptions = data.Industries;
 
+  // Pre-fill the form from the verified permit; anything not found stays as it was.
+  const handlePermitVerified = ({ documentToken, fields }: DocumentScanResult<PermitFields>) => {
+    setDocumentToken(documentToken);
+
+    const industryTitle = matchOption(fields.industry, industryOptions.map((o) => o.title));
+    const industry = industryOptions.find((o) => o.title === industryTitle);
+    const customIndustry = toPlainText(fields.industry).replace(/[0-9]/g, "").trim();
+
+    // The permit's email only fills an empty (or previously auto-filled) field. An email the
+    // user typed, is verifying with an OTP, or has verified always wins.
+    const canFillEmail = !isEmailVerified && step !== "otp" && (!formData.email.trim() || emailAutofill === "filled");
+    const permitEmail = canFillEmail ? toEmail(fields.email) : "";
+    if (canFillEmail) setEmailAutofill(permitEmail ? "filled" : "missing");
+
+    setFormData((prev) => ({
+      ...prev,
+      company: fields.business_name?.trim() || prev.company,
+      email: permitEmail || prev.email,
+      phone: toLocalMobile(fields.phone) || prev.phone,
+      ...(industry
+        ? { industry: industry._id, industryTitle: "No Industry Title Provided" }
+        : customIndustry
+        ? { industry: "others", industryTitle: customIndustry }
+        : {}),
+    }));
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     // Reset verification if email changes
-    if (e.target.name === "email" && isEmailVerified) {
-      setIsEmailVerified(false);
+    if (e.target.name === "email") {
+      setEmailAutofill(null);
+      if (isEmailVerified) setIsEmailVerified(false);
     }
   };
 
@@ -188,15 +205,28 @@ const Register = async () => {
       return;
     }
 
-    console.log("Employer signup:", { ...formData, files });
     Register();
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Step 1: permit first; AI verifies it and fills in the rest */}
+      <DocumentScanUpload<PermitFields>
+        label="Business Permit / Mayor's Permit *"
+        accept="image/jpeg,image/png,application/pdf"
+        helpText="Upload a clear photo, scan or PDF of your Business/Mayor's Permit, DTI, SEC or BIR certificate. Maximum of 5 MB."
+        type="image"
+        field="permit"
+        onVerified={handlePermitVerified}
+        onCleared={() => setDocumentToken("")}
+      />
+
+      {documentToken && (
+      <>
       {/* Company Name */}
       <div className="space-y-2">
         <Label htmlFor="company-name">Company/Business Name</Label>
+        <p className="text-xs text-muted-foreground">Must match the business name on your permit.</p>
         <Input
           id="company-name"
           name="company"
@@ -220,14 +250,43 @@ const Register = async () => {
             value={formData.email}
             onChange={handleChange}
             required
-            disabled={isEmailVerified}
+            // Locked while a code is pending, so the code is always checked against this address.
+            disabled={isEmailVerified || step === "otp"}
           />
+          {!isEmailVerified && step !== "otp" && emailAutofill === "filled" && (
+            <p className="text-xs text-muted-foreground">
+              Filled in from your permit. You can change it before sending the OTP.
+            </p>
+          )}
+          {!isEmailVerified && step !== "otp" && emailAutofill === "missing" && (
+            <p className="text-xs text-muted-foreground">
+              No email was found on your permit. Please type your business email.
+            </p>
+          )}
         </div>
-        
-        {!isEmailVerified && (
+
+        {!isEmailVerified && step !== "otp" && (
           <Button disabled={isButtonDisabled} type="button" variant="secondary" onClick={handleSendOTP} className="w-full">
             Send OTP to Email
           </Button>
+        )}
+
+        {!isEmailVerified && step === "otp" && (
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>Code sent to <span className="font-medium text-foreground">{formData.email}</span></span>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              onClick={() => {
+                setStep("form");
+                setIsButtonDisabled(false);
+              }}
+            >
+              Use a different email
+            </Button>
+          </div>
         )}
         
         {step === "otp" && !isEmailVerified && (
@@ -345,21 +404,11 @@ const Register = async () => {
         )}
       </div>
 
-      {/* Business Permit Upload */}
-      <FileUpload
-        label="Business/Company Permit"
-        accept="image/*"
-        file={files.permit}   // ✅ REQUIRED
-        onChange={(file) =>
-          setFiles((prev) => ({ ...prev, permit: file }))
-        }
-        helpText="Upload a photo or scan of your business permit. Maximum of 15 MB."
-        type="image"
-      />
-
-      <Button type="submit" className="w-full" size="lg" disabled={!isEmailVerified}>
+      <Button type="submit" className="w-full" size="lg" disabled={!isEmailVerified || !documentToken}>
         Sign Up as Employer
       </Button>
+      </>
+      )}
     </form>
   );
 };

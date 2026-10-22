@@ -13,32 +13,13 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Bot, CheckCircle2, AlertTriangle, CircleSlash, UserX, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  ANALYTICS_QUERY_KEY, autoApprovalRate, fetchAdminAnalytics, sectorChartData, supplyDemandData, type AnalyticsData,
+} from "@/lib/dashboardCharts";
 
 axios.defaults.withCredentials = true;
 
 const API = "http://localhost:8920/api/admin";
-
-interface SectorRow {
-  sector: string;
-  jobPosts: number;
-  openJobs: number;
-  openPositions: number;
-  workers: number;
-  applications: number;
-  placements: number;
-}
-
-interface AnalyticsData {
-  totals: {
-    openJobs: number; openPositions: number; activeWorkers: number; activeEmployers: number;
-    applications: number; placements: number; placementRate: number;
-  };
-  bySector: SectorRow[];
-  monthly: { month: string; jobsPosted: number; applications: number; newUsers: number }[];
-  applicationOutcomes: { status: string; count: number }[];
-  verification: { total: number; autoApproved: number; flagged: number; unavailable: number };
-  accounts: Record<"workers" | "employers", { active: number; pending: number; inactive: number; autoDeactivated: number }>;
-}
 
 interface CleanupPreview {
   inactivityMonths: number;
@@ -60,8 +41,6 @@ const VIZ_STYLE = `
   --series-2: #d95926;
   --series-3: #199e70;
 }`;
-
-const SECTOR_LIMIT = 8;
 
 const axisTick = { fontSize: 11, fill: "hsl(var(--muted-foreground))" };
 const gridStroke = "hsl(var(--border))";
@@ -126,8 +105,8 @@ const AdminAnalytics = () => {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const { data, isLoading, error } = useQuery<AnalyticsData>({
-    queryKey: ["adminAnalytics"],
-    queryFn: async () => (await axios.get(`${API}/analytics`)).data,
+    queryKey: ANALYTICS_QUERY_KEY,
+    queryFn: fetchAdminAnalytics,
   });
 
   const { data: cleanup } = useQuery<CleanupPreview>({
@@ -150,25 +129,10 @@ const AdminAnalytics = () => {
 
   const { totals, bySector, monthly, applicationOutcomes, verification, accounts } = data;
 
-  // Top sectors by job posts; the rest fold into "Other" so the chart stays readable.
-  const postedSectors = bySector.filter((s) => s.jobPosts > 0);
-  const sectorChart = postedSectors.slice(0, SECTOR_LIMIT).map((s) => ({ name: s.sector, jobPosts: s.jobPosts, openJobs: s.openJobs }));
-  const rest = postedSectors.slice(SECTOR_LIMIT);
-  if (rest.length) {
-    sectorChart.push({
-      name: `Other (${rest.length})`,
-      jobPosts: rest.reduce((n, s) => n + s.jobPosts, 0),
-      openJobs: rest.reduce((n, s) => n + s.openJobs, 0),
-    });
-  }
-
-  const supplyDemand = [...bySector]
-    .filter((s) => s.openPositions > 0 || s.workers > 0)
-    .sort((a, b) => b.openPositions + b.workers - (a.openPositions + a.workers))
-    .slice(0, 6)
-    .map((s) => ({ name: s.sector, openPositions: s.openPositions, workers: s.workers }));
-
-  const autoRate = verification.total ? Math.round((verification.autoApproved / verification.total) * 100) : 0;
+  // Shared with the PDF report so the downloaded charts match these.
+  const sectorChart = sectorChartData(bySector);
+  const supplyDemand = supplyDemandData(bySector);
+  const autoRate = autoApprovalRate(data);
   const lastIndex = monthly.length - 1;
   const candidates = cleanup?.candidates ?? [];
 

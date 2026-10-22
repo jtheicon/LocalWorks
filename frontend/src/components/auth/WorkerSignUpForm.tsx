@@ -5,8 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, X, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import PhoneInput from "./PhoneInput";
-import FileUpload from "./FileUpload";
 import OTPVerification from "./OTPVerification";
+import DocumentScanUpload, { DocumentScanResult } from "./DocumentScanUpload";
+import { matchOption, toEmail, toLocalMobile, toPlainText } from "./autofill";
 import {
   Select,
   SelectContent,
@@ -40,6 +41,28 @@ interface SkillCategory {
   title: string;
 }
 
+// Details the AI read from the uploaded resume.
+interface ResumeFields {
+  full_name: string;
+  email: string;
+  phone: string;
+  job_title: string;
+  skill_category: string;
+  skills: string[];
+}
+
+const JOB_TITLES = [
+  "Construction Laborer", "Carpenter", "Electrician", "Plumber", "Mason", "Painter", "Welder",
+  "Pipe Fitter", "Steel Fixer", "Roofer", "Tile Setter", "Drywall Installer", "Concrete Finisher",
+  "Scaffolder", "Glazier", "Insulation Worker", "Demolition Worker", "Heavy Equipment Operator",
+  "Forklift Operator", "Crane Operator", "Machine Operator", "HVAC Technician", "Refrigeration Technician",
+  "Maintenance Technician", "Building Maintenance Worker", "Mechanic", "Auto Mechanic", "Motorcycle Mechanic",
+  "Diesel Mechanic", "Fabricator", "Assembler", "Production Worker", "Factory Worker", "Warehouse Worker",
+  "Delivery Driver", "Truck Driver", "Landscaper", "Gardener", "Janitor", "Cleaner", "Housekeeper",
+  "Security Guard", "Fire Safety Officer", "Solar Panel Installer", "Water Pump Technician", "Foreman",
+  "Site Supervisor", "General Contractor",
+];
+
 const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -53,6 +76,8 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
 
   // Server-issued proof that the email was verified; required by the register endpoint.
   const [emailToken, setEmailToken] = useState("");
+  // Whether the email was filled in from the resume, to tell the user what to do next.
+  const [emailAutofill, setEmailAutofill] = useState<"filled" | "missing" | null>(null);
   const [customJobTitle, setCustomJobTitle] = useState("");
   const [customSkillCategory, setCustomSkillCategory] = useState("");
 
@@ -68,11 +93,12 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
 
   const [files, setFiles] = useState<{
     photo: File | null;
-    resume: File | null;
   }>({
     photo: null,
-    resume: null,
   });
+
+  // Signed proof that the resume was verified by AI; required by the register endpoint.
+  const [documentToken, setDocumentToken] = useState("");
 
   const [skills, setSkills] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState("");
@@ -159,6 +185,38 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
     }
   ];
 
+  // Pre-fill the form from the verified resume; anything not found stays as it was.
+  const handleResumeVerified = ({ documentToken, fields }: DocumentScanResult<ResumeFields>) => {
+    setDocumentToken(documentToken);
+
+    const jobTitle = matchOption(fields.job_title, JOB_TITLES);
+    const skillCategory = matchOption(fields.skill_category, skillCategoryOptions.map((o) => o.title));
+    const customJob = toPlainText(fields.job_title);
+    const customCategory = toPlainText(fields.skill_category);
+
+    // The resume's email only fills an empty (or previously auto-filled) field. An email the
+    // user typed, is verifying with an OTP, or has verified always wins.
+    const canFillEmail = !isEmailVerified && step !== "otp" && (!formData.email.trim() || emailAutofill === "filled");
+    const resumeEmail = canFillEmail ? toEmail(fields.email) : "";
+    if (canFillEmail) setEmailAutofill(resumeEmail ? "filled" : "missing");
+
+    setFormData((prev) => ({
+      ...prev,
+      name: toPlainText(fields.full_name, 35) || prev.name,
+      email: resumeEmail || prev.email,
+      phoneNumber: toLocalMobile(fields.phone) || prev.phoneNumber,
+      jobTitle: jobTitle ?? (customJob ? "Others" : prev.jobTitle),
+      skill: skillCategory ?? (customCategory ? "Others" : prev.skill),
+    }));
+    if (!jobTitle && customJob) setCustomJobTitle(customJob);
+    if (!skillCategory && customCategory) setCustomSkillCategory(customCategory);
+
+    const resumeSkills = (fields.skills || [])
+      .map((s) => s.replace(/[^A-Za-z ]/g, " ").replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    setSkills((prev) => Array.from(new Set([...prev, ...resumeSkills])).slice(0, 15));
+  };
+
   // Add skill
   const handleAddSkill = () => {
     if (skillInput.trim() && !skills.includes(skillInput.trim())) {
@@ -184,8 +242,9 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
 
-    if (e.target.name === "email" && isEmailVerified) {
-      setIsEmailVerified(false);
+    if (e.target.name === "email") {
+      setEmailAutofill(null);
+      if (isEmailVerified) setIsEmailVerified(false);
     }
   };
 
@@ -219,15 +278,6 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
   // Submit form
   const submit = async () => {
     try {
-      if (!files.resume || files.resume.size === 0) {
-        toast({
-          title: "Resume Required",
-          description: "Please upload your resume before signing up.",
-          variant: "destructive",
-        });
-        return;
-      }
-
       const formDataToSend = new FormData();
 
       // Append text fields
@@ -263,8 +313,8 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
         formDataToSend.append("photo", files.photo);
       }
 
-      // Required resume
-      formDataToSend.append("resume", files.resume);
+      // The resume itself was already uploaded and verified in step 1.
+      formDataToSend.append("documentToken", documentToken);
 
       formDataToSend.append("emailToken", emailToken);
 
@@ -321,10 +371,10 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
       return;
     }
 
-    if (!files.resume) {
+    if (!documentToken) {
       toast({
         title: "Resume Required",
-        description: "Please upload your resume before signing up.",
+        description: "Please upload your resume and wait for it to be verified.",
         variant: "destructive",
       });
       return;
@@ -353,9 +403,22 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
         }
       /> */}
 
+      {/* Step 1: resume first; AI verifies it and fills in the rest */}
+      <DocumentScanUpload<ResumeFields>
+        label="CV / Resume *"
+        accept=".pdf,.docx"
+        helpText="Upload your CV or resume in PDF or DOCX format. Maximum of 5 MB."
+        field="resume"
+        onVerified={handleResumeVerified}
+        onCleared={() => setDocumentToken("")}
+      />
+
+      {documentToken && (
+      <>
       {/* Name */}
       <div className="space-y-2">
         <Label htmlFor="worker-name">Full Name</Label>
+        <p className="text-xs text-muted-foreground">Must match the name on your resume.</p>
         <Input
           id="worker-name"
           name="name"
@@ -378,10 +441,22 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
           value={formData.email}
           onChange={handleChange}
           required
-          disabled={isEmailVerified}
+          // Locked while a code is pending, so the code is always checked against this address.
+          disabled={isEmailVerified || step === "otp"}
         />
 
-        {!isEmailVerified && (
+        {!isEmailVerified && step !== "otp" && emailAutofill === "filled" && (
+          <p className="text-xs text-muted-foreground">
+            Filled in from your resume. You can change it before sending the OTP.
+          </p>
+        )}
+        {!isEmailVerified && step !== "otp" && emailAutofill === "missing" && (
+          <p className="text-xs text-muted-foreground">
+            No email was found on your resume. Please type it in.
+          </p>
+        )}
+
+        {!isEmailVerified && step !== "otp" && (
           <Button
             disabled={isButtonDisabled}
             type="button"
@@ -391,6 +466,24 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
           >
             Send OTP to Email
           </Button>
+        )}
+
+        {!isEmailVerified && step === "otp" && (
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>Code sent to <span className="font-medium text-foreground">{formData.email}</span></span>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              onClick={() => {
+                setStep("form");
+                setIsButtonDisabled(false);
+              }}
+            >
+              Use a different email
+            </Button>
+          </div>
         )}
 
         {step === "otp" && !isEmailVerified && (
@@ -496,54 +589,9 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
           </SelectTrigger>
 
           <SelectContent>
-            <SelectItem value="Construction Laborer">Construction Laborer</SelectItem>
-            <SelectItem value="Carpenter">Carpenter</SelectItem>
-            <SelectItem value="Electrician">Electrician</SelectItem>
-            <SelectItem value="Plumber">Plumber</SelectItem>
-            <SelectItem value="Mason">Mason</SelectItem>
-            <SelectItem value="Painter">Painter</SelectItem>
-            <SelectItem value="Welder">Welder</SelectItem>
-            <SelectItem value="Pipe Fitter">Pipe Fitter</SelectItem>
-            <SelectItem value="Steel Fixer">Steel Fixer</SelectItem>
-            <SelectItem value="Roofer">Roofer</SelectItem>
-            <SelectItem value="Tile Setter">Tile Setter</SelectItem>
-            <SelectItem value="Drywall Installer">Drywall Installer</SelectItem>
-            <SelectItem value="Concrete Finisher">Concrete Finisher</SelectItem>
-            <SelectItem value="Scaffolder">Scaffolder</SelectItem>
-            <SelectItem value="Glazier">Glazier</SelectItem>
-            <SelectItem value="Insulation Worker">Insulation Worker</SelectItem>
-            <SelectItem value="Demolition Worker">Demolition Worker</SelectItem>
-            <SelectItem value="Heavy Equipment Operator">Heavy Equipment Operator</SelectItem>
-            <SelectItem value="Forklift Operator">Forklift Operator</SelectItem>
-            <SelectItem value="Crane Operator">Crane Operator</SelectItem>
-            <SelectItem value="Machine Operator">Machine Operator</SelectItem>
-            <SelectItem value="HVAC Technician">HVAC Technician</SelectItem>
-            <SelectItem value="Refrigeration Technician">Refrigeration Technician</SelectItem>
-            <SelectItem value="Maintenance Technician">Maintenance Technician</SelectItem>
-            <SelectItem value="Building Maintenance Worker">Building Maintenance Worker</SelectItem>
-            <SelectItem value="Mechanic">Mechanic</SelectItem>
-            <SelectItem value="Auto Mechanic">Auto Mechanic</SelectItem>
-            <SelectItem value="Motorcycle Mechanic">Motorcycle Mechanic</SelectItem>
-            <SelectItem value="Diesel Mechanic">Diesel Mechanic</SelectItem>
-            <SelectItem value="Fabricator">Fabricator</SelectItem>
-            <SelectItem value="Assembler">Assembler</SelectItem>
-            <SelectItem value="Production Worker">Production Worker</SelectItem>
-            <SelectItem value="Factory Worker">Factory Worker</SelectItem>
-            <SelectItem value="Warehouse Worker">Warehouse Worker</SelectItem>
-            <SelectItem value="Delivery Driver">Delivery Driver</SelectItem>
-            <SelectItem value="Truck Driver">Truck Driver</SelectItem>
-            <SelectItem value="Landscaper">Landscaper</SelectItem>
-            <SelectItem value="Gardener">Gardener</SelectItem>
-            <SelectItem value="Janitor">Janitor</SelectItem>
-            <SelectItem value="Cleaner">Cleaner</SelectItem>
-            <SelectItem value="Housekeeper">Housekeeper</SelectItem>
-            <SelectItem value="Security Guard">Security Guard</SelectItem>
-            <SelectItem value="Fire Safety Officer">Fire Safety Officer</SelectItem>
-            <SelectItem value="Solar Panel Installer">Solar Panel Installer</SelectItem>
-            <SelectItem value="Water Pump Technician">Water Pump Technician</SelectItem>
-            <SelectItem value="Foreman">Foreman</SelectItem>
-            <SelectItem value="Site Supervisor">Site Supervisor</SelectItem>
-            <SelectItem value="General Contractor">General Contractor</SelectItem>
+            {JOB_TITLES.map((title) => (
+              <SelectItem key={title} value={title}>{title}</SelectItem>
+            ))}
             <SelectItem value="Others">Others</SelectItem>
           </SelectContent>
         </Select>
@@ -631,25 +679,17 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
         )}
       </div>
 
-      <FileUpload
-        label="Resume *"
-        accept=".pdf,.doc,.docx"
-        file={files.resume}
-        onChange={(file) =>
-          setFiles((prev) => ({ ...prev, resume: file }))
-        }
-        helpText="Upload your resume in PDF, DOC, or DOCX format."
-      />
-
       {/* Submit Button */}
       <Button
         type="submit"
         className="w-full"
         size="lg"
-        disabled={!isEmailVerified || !files.resume}
+        disabled={!isEmailVerified || !documentToken}
       >
         Sign Up as Worker
       </Button>
+      </>
+      )}
     </form>
   );
 };
