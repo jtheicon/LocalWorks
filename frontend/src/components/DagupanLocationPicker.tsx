@@ -73,11 +73,12 @@ const DagupanLocationPicker = ({ value, onChange }: DagupanLocationPickerProps) 
       </div>
 
       <div className="overflow-hidden rounded-lg border border-border">
+        {/* Explicit height: aspect-ratio on an iframe can fall back to its default 150px (half-height map). */}
         <iframe
           src={mapSrc(mapQuery)}
-          className="block aspect-[16/9] w-full border-0"
+          height={288}
+          className="block h-72 w-full border-0"
           allowFullScreen
-          loading="lazy"
           referrerPolicy="no-referrer-when-downgrade"
           title="Google Map"
         />
