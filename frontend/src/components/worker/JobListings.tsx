@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +20,8 @@ import { useJobsStore, Job } from "@/lib/jobsStore";
 import axios from "axios";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import CredibilityBadge, { useCredibility } from "@/components/CredibilityBadge";
+import JobListingsSkeleton from "@/components/worker/JobListingsSkeleton";
+import { API_ORIGIN } from "@/lib/apiOrigin";
 axios.defaults.withCredentials = true;
 
 
@@ -50,21 +52,22 @@ const JobListings = () => {
 
   // A function for returning the jobs:
   const Jobs = async () => {
-    const { data } = await axios.get("http://localhost:8920/api/pro/viewJobs", {
-      withCredentials: true
-    })
+    const { data } = await axios.get(`${API_ORIGIN}/api/pro/viewJobs`, {
+      withCredentials: true,
+    });
 
-    return data
-  }
+    return data;
+  };
 
   // Display all jobs:
   // # ----------------------------------------------------------------------- #
   // # - The purpose of this useQuery function is to display all the jobs    - #
   // # ----------------------------------------------------------------------- #
-  const { data, error, isLoading } = useQuery({
-    queryKey: ['job'],
-    queryFn: Jobs
-  })
+  const { data, error, isPending } = useQuery({
+    queryKey: ["job"],
+    queryFn: Jobs,
+    staleTime: 60_000,
+  });
 
 
 
@@ -77,25 +80,15 @@ const JobListings = () => {
 
 
 
-  // Load the jobs and user information:
-  if (isLoading) return <div>Loading...</div>;
-  if (error) return <div>An error occured</div>;
+  const AllJobs = data?.jobs ?? [];
+  const recommendedScore = data?.matching?.recommendedScore ?? 50;
+  const aiMatching = data?.matching?.ai === "on";
 
-  // Store the jobs inside the AllJobs variable:
-  const AllJobs = data.jobs
-  if (!AllJobs.length) return <div>{data.message}</div>
-
-  // Skill match scores come from the server (backend/src/services/jobMatching.ts), which
-  // also matches differently-worded skills and, when enabled, uses AI for synonyms.
-  // matchScore is null when a job lists no skills.
-  const recommendedScore = data.matching?.recommendedScore ?? 50;
-  const aiMatching = data.matching?.ai === "on";
-
-  const enrichedJobs = (AllJobs || []).map(job => ({
+  const enrichedJobs = AllJobs.map((job) => ({
     ...job,
     matchScore: job.match?.score ?? null,
     matchedSkills: job.match?.matched || [],
-    missingSkills: job.match?.missing || []
+    missingSkills: job.match?.missing || [],
   }));
 
   const matchLabel = (job: any) =>
@@ -108,9 +101,8 @@ const JobListings = () => {
 
   const employerScore = (job: any) => employerScores[job?.info?.posted?._id]?.score ?? 0;
 
-  // Best skill match first; among equal matches, more credible employers first.
   const sortedJobs = [...enrichedJobs].sort(
-    (a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0) || employerScore(b) - employerScore(a)
+    (a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0) || employerScore(b) - employerScore(a),
   );
 
   const filteredJobs = sortedJobs.filter((job: any) => {
@@ -300,15 +292,27 @@ const JobListings = () => {
         </div>
       )}
 
+      {error && !isPending && (
+        <p className="text-sm text-destructive mb-4">Could not load jobs. Please refresh the page.</p>
+      )}
+
+      {!isPending && data && AllJobs.length === 0 && (
+        <p className="text-muted-foreground mb-4">{data.message ?? "No jobs available right now."}</p>
+      )}
+
       {/* Results Count */}
-      <p className="text-sm text-muted-foreground mb-4">
-        Showing {filteredJobs.length} job{filteredJobs.length !== 1 ? "s" : ""}
-      </p>
+      {!isPending && AllJobs.length > 0 && (
+        <p className="text-sm text-muted-foreground mb-4">
+          Showing {filteredJobs.length} job{filteredJobs.length !== 1 ? "s" : ""}
+        </p>
+      )}
+
+      {isPending && <JobListingsSkeleton />}
 
       {/* Job Listings */}
       <div className="grid gap-4">
         {/* Recommended Jobs */}
-        {recommendedJobs.length > 0 && (
+        {!isPending && recommendedJobs.length > 0 && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -407,7 +411,7 @@ const JobListings = () => {
           </div>
         )}
 
-        {recommendedJobs.length > 2 && (
+        {!isPending && recommendedJobs.length > 2 && (
           <div className="mt-4 flex justify-center">
             <Button
               variant="outline"
@@ -421,7 +425,7 @@ const JobListings = () => {
         )}
 
         
-        {filteredJobs.map((job: any) => {
+        {!isPending && filteredJobs.map((job: any) => {
           return (
             <Card key={job.info._id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
@@ -508,7 +512,7 @@ const JobListings = () => {
         })}
       </div>
 
-      {filteredJobs.length === 0 && (
+      {!isPending && AllJobs.length > 0 && filteredJobs.length === 0 && (
         <div className="text-center py-12">
           <p className="text-muted-foreground text-lg">No jobs found matching your search.</p>
           <Button variant="link" onClick={() => { setSearchTerm(""); }}>

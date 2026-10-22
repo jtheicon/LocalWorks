@@ -7,9 +7,10 @@ import { mainError } from "../errors/showErrors";
 import {
   INACTIVITY_MONTHS,
   findInactiveAccounts,
-  deactivateInactiveAccounts,
   getLastCleanupRun,
 } from "../services/accountCleanup";
+import { runInactivityMonitor } from "../services/inactivityMonitor";
+import { bucketAccountHealth } from "../services/adminAccountBuckets";
 
 // Sector names come from free-text job categories / worker skill categories,
 // so group case-insensitively and display the most common spelling.
@@ -32,8 +33,12 @@ export const Analytics = async (_req: Request, res: Response) => {
     const [jobs, workers, employers, applications] = await Promise.all([
       Job.find({ status: { $ne: "DELETED" } }).select("category status positions applyBefore createdAt verification").lean(),
       // Deleted accounts (soft-deleted by an admin) are left out of all statistics.
-      Worker.find({ status: { $ne: "deleted" } }).select("skill status createdAt verification deactivation").lean(),
-      Employer.find({ status: { $ne: "deleted" } }).select("status createdAt verification deactivation").lean(),
+      Worker.find({ status: { $ne: "deleted" } })
+        .select("skill status createdAt updatedAt lastActiveAt verification deactivation reactivationRequestStatus")
+        .lean(),
+      Employer.find({ status: { $ne: "deleted" } })
+        .select("status createdAt updatedAt lastActiveAt verification deactivation reactivationRequestStatus")
+        .lean(),
       Application.find().select("job status createdAt").lean(),
     ]);
 
@@ -120,24 +125,21 @@ export const Analytics = async (_req: Request, res: Response) => {
       unavailable: checked.filter((v: any) => v.method === "unavailable").length,
     };
 
-    /* ---------------------------- account health --------------------------- */
-    const accountStatus = (list: any[]) => ({
-      active: list.filter((u) => u.status === "active" || u.status === "verified").length,
-      pending: list.filter((u) => u.status === "pending").length,
-      inactive: list.filter((u) => u.status === "not_active").length,
-      autoDeactivated: list.filter((u) => u.status === "not_active" && u.deactivation?.reason === "inactivity").length,
-    });
+    /* ---------------------------- account health (aligned with User management) */
+    const accountStatus = (list: any[]) => bucketAccountHealth(list);
 
     const openJobs = jobs.filter((j: any) => isOpen(j, today));
     const placements = outcomeCounts["Accepted"] ?? 0;
+    const workerHealth = accountStatus(workers);
+    const employerHealth = accountStatus(employers);
 
     return res.status(200).json({
       success: true,
       totals: {
         openJobs: openJobs.length,
         openPositions: openJobs.reduce((sum: number, j: any) => sum + (Number(j.positions) || 0), 0),
-        activeWorkers: accountStatus(workers).active,
-        activeEmployers: accountStatus(employers).active,
+        activeWorkers: workerHealth.platformActive + workerHealth.inactivityMonitoring,
+        activeEmployers: employerHealth.platformActive + employerHealth.inactivityMonitoring,
         applications: applications.length,
         placements,
         placementRate: applications.length ? Math.round((placements / applications.length) * 100) : 0,
@@ -146,7 +148,7 @@ export const Analytics = async (_req: Request, res: Response) => {
       monthly,
       applicationOutcomes,
       verification,
-      accounts: { workers: accountStatus(workers), employers: accountStatus(employers) },
+      accounts: { workers: workerHealth, employers: employerHealth },
     });
   } catch (error) {
     mainError(error, res);
@@ -173,11 +175,11 @@ export const CleanupPreview = async (_req: Request, res: Response) => {
 
 export const RunCleanup = async (_req: Request, res: Response) => {
   try {
-    const deactivated = await deactivateInactiveAccounts();
+    const result = await runInactivityMonitor();
     return res.status(200).json({
       success: true,
-      message: `Deactivated ${deactivated.length} inactive account(s).`,
-      deactivated,
+      message: `Inactivity job finished (${result.deactivated} deactivated).`,
+      result,
     });
   } catch (error) {
     mainError(error, res);

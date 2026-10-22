@@ -26,6 +26,9 @@ import { toast } from "sonner";
 import axios from "axios";
 import { useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ADMIN_API, adminQueryKeys, invalidateAdminPlatformData } from "@/lib/adminConnect";
+
+axios.defaults.withCredentials = true;
 
 interface JobDetailModalProps {
   job: Job | null;
@@ -54,15 +57,15 @@ const JobDetailModal = ({
 
     try {
       const response = await axios.put(
-        `http://localhost:8920/api/admin/updateJob/${_id}`,
+        `${ADMIN_API}/updateJob/${_id}`,
         { newStatus },
-        { withCredentials: true }
+        { withCredentials: true },
       );
 
       toast.success(response.data.message);
 
-      // ✅ THIS triggers refetch of data.JOBS
-      await queryClient.invalidateQueries({ queryKey: ["adminDashboard"] });
+      invalidateAdminPlatformData(queryClient);
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.dashboard });
 
       onOpenChange(false);
     } catch (error: any) {

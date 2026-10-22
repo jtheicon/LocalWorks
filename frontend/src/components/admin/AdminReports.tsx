@@ -33,6 +33,13 @@ import {
 } from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
 import ReportDetailsModal from "./ReportDetailsModal";
+import {
+  ADMIN_API,
+  adminQueryKeys,
+  fetchAdminReports,
+  ADMIN_REPORTS_STALE_MS,
+} from "@/lib/adminConnect";
+import AdminReportsSkeleton from "@/components/admin/AdminReportsSkeleton";
 
 
 const BAR_COLORS = [
@@ -71,33 +78,10 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
   const [ID, SetID] = useState(null)
   const [exporting, setExporting] = useState<ExportFormat | null>(null)
 
-  const fetchReports = async () => {
-    const res = await axios.get(
-      "http://localhost:8920/api/admin/reports",
-      {
-        withCredentials: true
-      }
-    );
-
-    return res.data;
-  };
-
-  const getApplicationHealth = async () => {
-    const res = await axios.get(
-      "http://localhost:8920/api/application-health"
-    );
-
-    console.log("API RESPONSE:", res.data);
-
-    return res.data;
-  };
-
-
-
   const updateReportStatus = async (_id: string, status: string) => {
     try {
       await axios.patch(
-        "http://localhost:8920/api/admin/update/report",
+        `${ADMIN_API}/update/report`,
         {
           _id,
           status,
@@ -108,7 +92,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
       );
 
       await queryClient.invalidateQueries({
-        queryKey: ["Reports"],
+        queryKey: adminQueryKeys.reports,
       });
 
       toast.success("Report status updated");
@@ -118,41 +102,25 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
   };
 
 
-  const {
-    data,
-    isLoading,
-    error,
-    refetch
-  } = useQuery({
-    queryKey: ["Reports"],
-    queryFn: fetchReports
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: adminQueryKeys.reports,
+    queryFn: fetchAdminReports,
+    staleTime: ADMIN_REPORTS_STALE_MS,
   });
 
+  const jobsByIndustry = data?.jobsByIndustry ?? [];
+  const workerGrowth = data?.workerGrowth ?? [];
+  const jobPerformance = data?.jobPerformance ?? [];
+  const categoryTable = data?.categoryTable ?? [];
+  const reportedWorkers = data?.ReportedWorkers ?? [];
+  const healthMetrics = data?.applicationHealth ?? {
+    verificationRate: 0,
+    averageMatchTime: 0,
+    averageResponseTime: 0,
+    platformUptime: 0,
+  };
 
-  const {
-    data: health,
-    isLoading: healthLoading,
-    error: healthError
-  } = useQuery({
-    queryKey: ["ApplicationHealth"],
-    queryFn: getApplicationHealth
-  });
-
-
-  if (isLoading || healthLoading) {
-    return <div>Loading...</div>;
-  }
-
-  if (error || healthError) {
-    return <div>Error loading reports</div>;
-  }
-
-  const {
-    jobsByIndustry = [],
-    workerGrowth = [],
-    jobPerformance = [],
-    categoryTable = [],
-  } = data || {};
+  const reportsReady = !isPending && Boolean(data);
 
   const buildReport = (last30Days: boolean): SystemReport => {
     const since = new Date();
@@ -175,10 +143,10 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
         ["Rejected", count("DECLINED")],
         ["Fill Rate", `${rangeJobs.length ? Math.round((count("ACCEPTED") / rangeJobs.length) * 100) : 0}%`],
         ["Incident Reports", rangeIncidents.length],
-        ["Verification Rate", `${health?.data?.verificationRate ?? 0}%`],
-        ["Average Match Time", `${health?.data?.averageMatchTime ?? 0} hrs`],
-        ["Average Response Time", `${health?.data?.averageResponseTime ?? 0} mins`],
-        ["Platform Uptime", `${health?.data?.platformUptime ?? 0}%`],
+        ["Verification Rate", `${healthMetrics.verificationRate}%`],
+        ["Average Match Time", `${healthMetrics.averageMatchTime} hrs`],
+        ["Average Response Time", `${healthMetrics.averageResponseTime} mins`],
+        ["Platform Uptime", `${healthMetrics.platformUptime}%`],
       ],
       sections: [
         {
@@ -260,9 +228,15 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
   ];
 
   return (
-    <main className="flex-1 p-6 space-y-6 overflow-auto">
+    <main className="p-6 space-y-6">
+      {isError && (
+        <p className="text-sm text-destructive">Could not load reports. Try Refresh on User management or re-open this tab.</p>
+      )}
+
+      {!reportsReady && <AdminReportsSkeleton />}
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className={`flex items-center justify-between ${!reportsReady ? "hidden" : ""}`}>
         <div>
           <h2 className="text-xl font-bold text-foreground">Detailed Reports & Analytics</h2>
           <p className="text-sm text-muted-foreground">Analyze application performance and trends</p>
@@ -297,7 +271,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className={!reportsReady ? "hidden" : ""}>
         <TabsList className="bg-transparent gap-1 p-0 h-auto border-b border-border rounded-none w-full justify-start">
           {[
             { value: "worker", label: "Worker Performance" },
@@ -317,7 +291,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
       </Tabs>
 
       {/* Content based on tab */}
-      {activeTab === "worker" && (
+      {reportsReady && activeTab === "worker" && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
           {/* Worker Growth Chart */}
           <Card className="border-none shadow-sm">
@@ -368,19 +342,19 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Verification Rate:</span>
-                    <span className="font-semibold text-foreground">{health?.data?.verificationRate ?? 0}%</span>
+                    <span className="font-semibold text-foreground">{healthMetrics.verificationRate}%</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Average Match Time:</span>
-                    <span className="font-semibold text-foreground">{health?.data?.averageMatchTime ?? 0} Hrs</span>
+                    <span className="font-semibold text-foreground">{healthMetrics.averageMatchTime} Hrs</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Average Response Time:</span>
-                    <span className="font-semibold text-foreground">{health?.data?.averageResponseTime ?? 0} Mins</span>
+                    <span className="font-semibold text-foreground">{healthMetrics.averageResponseTime} Mins</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Platform Uptime:</span>
-                    <span className="font-semibold text-foreground">{health?.data?.platformUptime ?? 0}%</span>
+                    <span className="font-semibold text-foreground">{healthMetrics.platformUptime}%</span>
                   </div>
                 </div>
               </CardContent>
@@ -394,7 +368,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
         </div>
       )}
 
-      {activeTab === "job" && (
+      {reportsReady && activeTab === "job" && (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
           <Card className="border-none shadow-sm">
             <CardContent className="p-5">
@@ -453,7 +427,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
         </div>
       )}
 
-      {activeTab === "category" && (
+      {reportsReady && activeTab === "category" && (
         <div className="space-y-4">
           <CategoryTable data={categoryTable} />
           <div className="grid sm:grid-cols-2 gap-4">
@@ -493,7 +467,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
         </div>
       )}
 
-      {activeTab === "reports" && (
+      {reportsReady && activeTab === "reports" && (
         <Card className="border-none shadow-sm">
           <CardContent className="p-5">
             <h3 className="text-base font-semibold mb-4">Reports</h3>
@@ -510,7 +484,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
               </TableHeader>
 
               <TableBody>
-                {data.ReportedWorkers.map((report: any) => (
+                {reportedWorkers.map((report: any) => (
                   <TableRow key={report._id}>
                     <TableCell>{report.reportType}</TableCell>
                     <TableCell>{report.description}</TableCell>
@@ -536,8 +510,8 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
                     <TableCell>
                       <Button onClick={() => {
                         setReportDetails(true)
-                        SetWorker(report.workerId.email)
-                        SetEmployer(report.employerId.email)
+                        SetWorker(report.workerId?.email ?? "")
+                        SetEmployer(report.employerId?.email ?? "")
                         SetDescription(report.description)
                         SetType(report.reportType)
                         SetStatus(report.status)

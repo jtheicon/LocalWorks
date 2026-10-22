@@ -26,7 +26,7 @@ import { uploadPermits } from "../file/upload";
 import { issueOTP, verifyOTP, assertVerifiedEmail, OTPError } from "../services/emailOtp";
 import { namesMatch, readSignupDocumentToken, SignupDocumentError } from "../services/signupDocument";
 import { isEmailTaken, releaseDeletedAccount } from "../services/accounts";
-import { touchActivity } from "../services/accountCleanup";
+import { recordQualifyingActivity } from "../services/activityTracking";
 
 // Source that resolved "Error: Invalid login: 535-5.7.8 Username and Password not accepted."
 // Link: https://laravelmail.com/blog/458-i-get-a-error-error-invalid-login-535-578-username/?srsltid=AfmBOor_5OgrHjOqJPiYk4AjAadRHtLMvX37IqiCdKApMZZre-Lbq7eI
@@ -662,15 +662,18 @@ export const EmployerLogin = async (req: Request, res: Response) => {
 
     // Only reached after the password matched, so this does not reveal accounts to guessers.
     if (user.status === "pending") return res.status(403).json({ success: false, message: "Your account is still being verified. We will email you once it is active." })
-    // Deactivated automatically for 6+ months of inactivity: logging in with the right password reactivates it.
-    // Accounts deactivated by an admin (no inactivity reason) stay blocked.
-    if (user.status === "not_active" && user.get("deactivation")?.reason === "inactivity") {
-      user.status = "active"
-      user.set("deactivation", null)
-      await user.save()
+    if (user.status === "not_active") {
+      const inactivity = user.get("deactivation")?.reason === "inactivity"
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_DEACTIVATED",
+        message: inactivity
+          ? "Your account was deactivated due to inactivity. Use the reactivation link in your email or submit a reactivation request for admin review."
+          : "Your account is not active. Contact an administrator.",
+      })
     }
-    if (user.status === "deleted" || user.status === "not_active") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
-    touchActivity(String(user._id), user.role, true)
+    if (user.status === "deleted") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
+    recordQualifyingActivity(String(user._id), user.role, true)
 
     // console.log({
     //   id: user._id,
@@ -720,15 +723,18 @@ export const WorkerLogin = async (req: Request, res: Response) => {
     
     // Only reached after the password matched, so this does not reveal accounts to guessers.
     if (user.status === "pending") return res.status(403).json({ success: false, message: "Your account is still being verified. We will email you once it is active." })
-    // Deactivated automatically for 6+ months of inactivity: logging in with the right password reactivates it.
-    // Accounts deactivated by an admin (no inactivity reason) stay blocked.
-    if (user.status === "not_active" && user.get("deactivation")?.reason === "inactivity") {
-      user.status = "active"
-      user.set("deactivation", null)
-      await user.save()
+    if (user.status === "not_active") {
+      const inactivity = user.get("deactivation")?.reason === "inactivity"
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_DEACTIVATED",
+        message: inactivity
+          ? "Your account was deactivated due to inactivity. Use the reactivation link in your email or submit a reactivation request for admin review."
+          : "Your account is not active. Contact an administrator.",
+      })
     }
-    if (user.status === "deleted" || user.status === "not_active") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
-    touchActivity(String(user._id), user.role, true)
+    if (user.status === "deleted") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
+    recordQualifyingActivity(String(user._id), user.role, true)
 
     const token = jwt.sign({ id: user._id, name: user.name, role: user.role, status: user.status, email: user.email }, process.env.JWT_SECRET as string, {
       expiresIn: '1h'
@@ -756,15 +762,15 @@ export const FindJobs = async (req: Request, res: Response) => {
   if (!validatedApp.success) { const errors = validatedApp.error._zod.def; return res.status(400).json({ success: false, message: errors[0].message })}
 
   const { status } = validatedApp.data
-  let jobArray = []
 
   try {
-    const jobs = await Job.find({ status }).populate("location").sort({ createdAt: -1 })
-    if (!jobs.length) return res.status(200).json({ success: true, jobs, message: "No jobs available" })
+    const jobs = await Job.find({ status })
+      .populate("location")
+      .sort({ createdAt: -1 })
+      .lean()
+    if (!jobs.length) return res.status(200).json({ success: true, jobs: [], message: "No jobs available" })
 
-    for (let job = 0; job < jobs.length; job++) {
-      jobArray.push({ info: jobs[job], IsApplied: false })
-    }
+    const jobArray = jobs.map((info) => ({ info, IsApplied: false }))
 
     return res.status(200).json({
       success: true,
@@ -822,72 +828,46 @@ export const DropdownComp = async (req: Request, res: Response) => {
 
 
 // Display Workers:
+const PUBLIC_WORKER_FIELDS =
+  "name photo jobTitle location yearsOfExperience about_me skills availability rating reviews status createdAt";
+
 export const Workers = async (req: Request, res: Response) => {
   try {
-    const workers = await Worker.find({ status: "active" }).sort({
-      createdAt: -1,
-    });
-
-    // Get all registered workers:
-    const registeredWorkers = await Worker.find({ status: { $ne: "deleted" }})
-
-    // Get the Average Rating:
-    const result = await Rating.aggregate([
-      {
-        $group: {
-          _id: null,
-          averageRating: { $avg: "$rating" }
-        }
-      }
-    ]);
-
-    const AverageRating = result.length ? result[0].averageRating : 0
-
-    const jobs = await JobsCompleted.aggregate([
-      {
-        $match: {
-          status: "COMPLETED",
-        },
-      },
-      {
-        $group: {
-          _id: {
-            workerId: "$workerId",
-            workerAssignment: "$workerAssignment",
+    const [workers, registeredCount, ratingAgg, completedJobs, verifiedWorkers] = await Promise.all([
+      Worker.find({ status: "active" })
+        .select(PUBLIC_WORKER_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean(),
+      Worker.countDocuments({ status: { $ne: "deleted" } }),
+      Rating.aggregate([{ $group: { _id: null, averageRating: { $avg: "$rating" } } }]),
+      JobsCompleted.aggregate([
+        { $match: { status: "COMPLETED" } },
+        {
+          $group: {
+            _id: { workerId: "$workerId", workerAssignment: "$workerAssignment" },
           },
         },
-      },
-      {
-        $project: {
-          _id: 0,
-          workerId: "$_id.workerId",
-          workerAssignment: "$_id.workerAssignment",
-        },
-      },
+        { $count: "total" },
+      ]),
+      VerifiedWorker.find({}, "worker").lean(),
     ]);
 
+    const AverageRating = ratingAgg.length ? ratingAgg[0].averageRating : 0;
+    const jobsCompletedCount = completedJobs[0]?.total ?? 0;
 
-
-
-
-    // Get all verified worker IDs
-    const verifiedWorkers = await VerifiedWorker.find({}, "worker");
-
-    const verifiedIds = new Set(
-      verifiedWorkers.map((v) => v.worker.toString()) // there is an error in here
-    );
+    const verifiedIds = new Set(verifiedWorkers.map((v) => String(v.worker)));
 
     const workersWithVerification = workers.map((worker) => ({
-      ...worker.toObject(),
-      isVerified: verifiedIds.has(worker._id.toString()),
+      ...worker,
+      isVerified: verifiedIds.has(String(worker._id)),
     }));
 
     return res.status(200).json({
       success: true,
       Workers: workersWithVerification,
-      RegisteredWorkers: registeredWorkers.length,
+      RegisteredWorkers: registeredCount,
       AverageRating,
-      jobs: jobs.length
+      jobs: jobsCompletedCount,
     });
   } catch (error) {
     mainError(error, res);

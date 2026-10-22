@@ -22,7 +22,16 @@ export interface AnalyticsData {
   monthly: { month: string; jobsPosted: number; applications: number; newUsers: number }[];
   applicationOutcomes: { status: string; count: number }[];
   verification: { total: number; autoApproved: number; flagged: number; unavailable: number };
-  accounts: Record<"workers" | "employers", { active: number; pending: number; inactive: number; autoDeactivated: number }>;
+  accounts: Record<
+    "workers" | "employers",
+    {
+      platformActive: number;
+      inactivityMonitoring: number;
+      pending: number;
+      deactivated: number;
+      autoDeactivated: number;
+    }
+  >;
 }
 
 export const ANALYTICS_QUERY_KEY = ["adminAnalytics"];

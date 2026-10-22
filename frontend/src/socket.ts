@@ -1,6 +1,8 @@
 import { io } from "socket.io-client";
 
-export const socket = io("http://localhost:8920", {
+import { ADMIN_ORIGIN } from "@/lib/adminConnect";
+
+export const socket = io(ADMIN_ORIGIN, {
   autoConnect: false,
   transports: ["websocket"],
 });

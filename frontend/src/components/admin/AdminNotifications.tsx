@@ -18,20 +18,9 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import axios from "axios";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { socket } from "@/socket";
+import { useAdminNotifications, type AdminNotification } from "@/hooks/useAdminNotifications";
 
-interface Notification {
-  _id: string;
-  type: "job_posted" | "verification" | "application" | "report";
-  title: string;
-  description: string;
-  time: string;
-  read: boolean;
-  category: "job" | "account" | "report";
-  details?: string;
-}
+type Notification = AdminNotification;
 
 // Controller: { category }
 // createJob: { job }, WorkerRegister: { account }, newApplication: { job }
@@ -77,28 +66,20 @@ const formatUTC = (utc: string) => {
 };
 
 const AdminNotifications = () => {
-  const queryClient = useQueryClient()
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    isError: error,
+    setRead,
+    setAllRead,
+    remove,
+    isUpdating,
+  } = useAdminNotifications();
 
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
-
-  const fetchAdminNotifications = async () => {
-    const result = await axios.get(
-      "http://localhost:8920/api/admin/admin-notifications"
-    )
-
-    return result.data.notifications
-  }
-
-  const {
-    data: notifications = [],
-    isLoading,
-    error,
-  } = useQuery<Notification[]>({
-    queryKey: ["adminNotifications"],
-    queryFn: fetchAdminNotifications,
-  })
 
   const filtered = [...notifications]
     .filter((n: Notification) => {
@@ -118,73 +99,6 @@ const AdminNotifications = () => {
       return a.read ? 1 : -1;
     });
 
-  
-  
-  const markAsReadMutation = useMutation({
-    mutationFn: async (_id: string) => {
-      return await axios.patch(
-        `http://localhost:8920/api/admin/admin-notifications/${_id}`
-      )
-    },
-
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["adminNotifications"]
-      })
-
-      toast.success("Marked as read")
-    },
-
-    onError: () => {
-      toast.error("Failed to mark as read")
-    }
-  })
-
-
-  const markAllAsReadMutation = useMutation({
-    mutationFn: async (scope: string) => {
-      return await axios.patch(
-        "http://localhost:8920/api/admin/admin-notifications/mark-read",
-        { scope }
-      );
-    },
-
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["adminNotifications"],
-      });
-
-      toast.success("Notifications marked as read");
-    },
-
-    onError: () => {
-      toast.error("Failed to mark notifications as read");
-    },
-  });
-
-
-  const deleteNotificationMutation = useMutation({
-    mutationFn: async (_id: string) => {
-      return await axios.delete(
-        `http://localhost:8920/api/admin/admin-notifications/delete/${_id}`
-      )
-    },
-
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["adminNotifications"]
-      })
-
-      setSelectedNotification(null)
-
-      toast.success("Notification deleted")
-    },
-
-    onError: () => {
-      toast.error("Failed to delete notification")
-    }
-  })
-
   if (isLoading) {
     return <div>Loading...</div>
   }
@@ -193,23 +107,20 @@ const AdminNotifications = () => {
     return <div>Failed to load notifications</div>
   }
 
-  const markAsRead = (_id: string) => {
-    markAsReadMutation.mutate(_id)
-  }
-
+  const markAsRead = (_id: string) => setRead(_id, true);
+  const markAsUnread = (_id: string) => setRead(_id, false);
   const markAllAsRead = () => {
-    markAllAsReadMutation.mutate(activeFilter);
+    setAllRead(activeFilter === "all" ? "all" : activeFilter, true);
+    toast.success("Notifications marked as read");
+  };
+  const deleteNotification = (_id: string) => {
+    remove(_id);
+    setSelectedNotification(null);
+    toast.success("Notification deleted");
   };
 
-
-  const deleteNotification = (_id: string) => {
-    deleteNotificationMutation.mutate(_id)
-  }
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
   return (
-    <main className="flex-1 p-6 space-y-6 overflow-auto">
+    <main className="p-6 space-y-6">
       {/* Header */}
       <div>
         <h2 className="text-xl font-bold text-foreground">Welcome Back!, Admin</h2>
@@ -324,16 +235,15 @@ const AdminNotifications = () => {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 shrink-0">
-                  {!n.read && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs text-primary hover:text-primary"
-                      onClick={() => markAsRead(n._id)}
-                    >
-                      Mark as Read
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-primary hover:text-primary"
+                    disabled={isUpdating}
+                    onClick={() => (n.read ? markAsUnread(n._id) : markAsRead(n._id))}
+                  >
+                    {n.read ? "Mark unread" : "Mark as read"}
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -349,11 +259,9 @@ const AdminNotifications = () => {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      {!n.read && (
-                        <DropdownMenuItem onClick={() => markAsRead(n._id)}>
-                          Mark as Read
-                        </DropdownMenuItem>
-                      )}
+                      <DropdownMenuItem onClick={() => (n.read ? markAsUnread(n._id) : markAsRead(n._id))}>
+                        {n.read ? "Mark unread" : "Mark as read"}
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setSelectedNotification(n)}>
                         View Details
                       </DropdownMenuItem>
@@ -408,15 +316,21 @@ const AdminNotifications = () => {
             <p className="text-sm text-muted-foreground leading-relaxed">
               {selectedNotification?.details}
             </p>
-            {selectedNotification && !selectedNotification.read && (
+            {selectedNotification && (
               <Button
                 size="sm"
+                variant="outline"
+                disabled={isUpdating}
                 onClick={() => {
-                  markAsRead(selectedNotification._id);
-                  setSelectedNotification(null);
+                  if (selectedNotification.read) markAsUnread(selectedNotification._id);
+                  else markAsRead(selectedNotification._id);
+                  setSelectedNotification({
+                    ...selectedNotification,
+                    read: !selectedNotification.read,
+                  });
                 }}
               >
-                Mark as Read
+                {selectedNotification.read ? "Mark unread" : "Mark as read"}
               </Button>
             )}
           </div>

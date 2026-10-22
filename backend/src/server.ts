@@ -12,6 +12,7 @@ import { Server } from "socket.io";
 import { initSocket } from "./socket";
 import http from "http"
 import applicationHealthRouter from "./route/applicationHealth.route";
+import accountLifecycleRouter from "./route/accountLifecycle";
 import mongoose from "mongoose";
 import PlatformHealth from "./model/PlatformHealth";
 import Admin from "./model/Admin";
@@ -125,6 +126,7 @@ app.use("/api", rateLimiter)
 
 // Middlewares for authentication and protected and admin:
 app.use("/api/auth", authRouter)
+app.use("/api/account", accountLifecycleRouter)
 app.use("/api/pro", protectedRoutes)
 app.use("/api/admin", adminRoutes)
 

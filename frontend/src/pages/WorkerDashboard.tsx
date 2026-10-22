@@ -1,12 +1,10 @@
-import { useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogOut, Briefcase, User, FileText, UserCircle, Star, Phone, Flag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import WorkerProfile from "@/components/worker/WorkerProfile";
 import EditProfileModal from "@/components/worker/EditProfileModal";
-import JobListings from "@/components/worker/JobListings";
-import MyApplications from "@/components/worker/MyApplications";
 import WriteReviewModal from "@/components/WriteReviewModal";
+import JobListingsSkeleton from "@/components/worker/JobListingsSkeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -15,78 +13,109 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import logo from "@/assets/logo.avif";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import Contacts from "@/components/worker/Contacts";
 import { Bell } from "lucide-react";
-import WorkerNotifications from "@/components/worker/WorkerNotifications";
 import axios from "axios";
-import WorkerAssignment from "@/components/worker/WorkerAssignments";
-import Reports from "@/components/worker/Reports";
+import { API_ORIGIN } from "@/lib/apiOrigin";
 
-axios.defaults.withCredentials = true
+const JobListings = lazy(() => import("@/components/worker/JobListings"));
+const MyApplications = lazy(() => import("@/components/worker/MyApplications"));
+const Contacts = lazy(() => import("@/components/worker/Contacts"));
+const Reports = lazy(() => import("@/components/worker/Reports"));
+const WorkerNotifications = lazy(() => import("@/components/worker/WorkerNotifications"));
+const WorkerAssignment = lazy(() => import("@/components/worker/WorkerAssignments"));
+const WorkerProfile = lazy(() => import("@/components/worker/WorkerProfile"));
+
+axios.defaults.withCredentials = true;
+
+const fetchWorkerJobs = async () => {
+  const { data } = await axios.get(`${API_ORIGIN}/api/pro/viewJobs`, { withCredentials: true });
+  return data;
+};
 
 const WorkerDashboard = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("jobs");
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const handleLogout = async () => {
-    await axios.post("http://localhost:8920/api/pro/logout", {}, { withCredentials: true })
-    navigate("/");
+    setSigningOut(true);
+    try {
+      await axios.post(`${API_ORIGIN}/api/pro/logout`, {}, { withCredentials: true });
+      navigate("/");
+    } finally {
+      setSigningOut(false);
+      setSignOutOpen(false);
+    }
   };
 
   const isWorkerLogged = async () => {
-    const result = await axios.get("http://localhost:8920/api/pro/isWorkerLogged", { withCredentials: true })
-    return result.data
-  }
+    const result = await axios.get(`${API_ORIGIN}/api/pro/isWorkerLogged`, { withCredentials: true });
+    return result.data;
+  };
 
   const viewProfile = async () => {
-    const result = await axios.get("http://localhost:8920/api/pro/worker/profile", { withCredentials: true })
-    return result.data
-  }
+    const result = await axios.get(`${API_ORIGIN}/api/pro/worker/profile`, { withCredentials: true });
+    return result.data;
+  };
 
   const fetchNotifications = async () => {
-    const result = await axios.get(
-      "http://localhost:8920/api/pro/notifications"
-    );
-
+    const result = await axios.get(`${API_ORIGIN}/api/pro/notifications`, { withCredentials: true });
     return result.data.notifications;
   };
+
+  useEffect(() => {
+    void queryClient.prefetchQuery({
+      queryKey: ["job"],
+      queryFn: fetchWorkerJobs,
+      staleTime: 60_000,
+    });
+  }, [queryClient]);
 
   const { data: notifications = [] } = useQuery({
     queryKey: ["workerNotifications"],
     queryFn: fetchNotifications,
+    staleTime: 30_000,
   });
 
   const unreadCount = notifications.filter(
     (n: any) => !n.read
   ).length;
 
-  const { isLoading, error } = useQuery({
-    queryKey: ['isWorkerLogged'],
-    queryFn: isWorkerLogged
-  })
+  const { isError: authError } = useQuery({
+    queryKey: ["isWorkerLogged"],
+    queryFn: isWorkerLogged,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
 
-  const { data } = useQuery({
-    queryKey: ['profile'],
-    queryFn: viewProfile
-  })
+  const { data: profileData } = useQuery({
+    queryKey: ["profile"],
+    queryFn: viewProfile,
+    staleTime: 5 * 60 * 1000,
+  });
 
-  const styleCenter = {
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    margin: "40px"
-  }
-
-  if (isLoading) return <div style={styleCenter}>Loading...</div>
-  if (error) {
-    navigate("/", { replace: true })
-    toast.info("Please Login as Worker to use the Worker Dashboard.")
-  }
+  useEffect(() => {
+    if (!authError) return;
+    navigate("/", { replace: true });
+    toast.info("Please Login as Worker to use the Worker Dashboard.");
+  }, [authError, navigate]);
 
   const handleViewProfile = () => {
     setActiveTab("profile");
@@ -117,7 +146,7 @@ const WorkerDashboard = () => {
               <div className="relative flex flex-col items-center gap-1 cursor-pointer">
                 <Avatar className="h-10 w-10">
                   <AvatarImage
-                    src={`http://localhost:8920/uploads/profile/${data?.WorkerProf?.photo}`}
+                    src={`${API_ORIGIN}/uploads/profile/${profileData?.WorkerProf?.photo}`}
                   />
                   <AvatarFallback className="bg-primary text-primary-foreground">
                     <UserCircle className="h-6 w-6" />
@@ -131,7 +160,7 @@ const WorkerDashboard = () => {
                 )}
 
                 <span className="text-xs text-muted-foreground">
-                  {data?.WorkerProf?.name}
+                  {profileData?.WorkerProf?.name}
                 </span>
               </div>
             </DropdownMenuTrigger>
@@ -153,7 +182,13 @@ const WorkerDashboard = () => {
                 Write a Review
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={handleLogout} className="cursor-pointer text-destructive">
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setSignOutOpen(true);
+                }}
+                className="cursor-pointer text-destructive"
+              >
                 <LogOut className="mr-2 h-4 w-4" />
                 Logout
               </DropdownMenuItem>
@@ -197,31 +232,59 @@ const WorkerDashboard = () => {
           </TabsList>
 
           <TabsContent value="jobs">
-            <JobListings />
+            {activeTab === "jobs" && (
+              <Suspense fallback={<JobListingsSkeleton />}>
+                <JobListings />
+              </Suspense>
+            )}
           </TabsContent>
 
           <TabsContent value="applications">
-            <MyApplications />
+            {activeTab === "applications" && (
+              <Suspense fallback={<JobListingsSkeleton />}>
+                <MyApplications />
+              </Suspense>
+            )}
           </TabsContent>
 
           <TabsContent value="contacts">
-            <Contacts />
+            {activeTab === "contacts" && (
+              <Suspense fallback={<JobListingsSkeleton />}>
+                <Contacts />
+              </Suspense>
+            )}
           </TabsContent>
 
           <TabsContent value="reports">
-            <Reports />
+            {activeTab === "reports" && (
+              <Suspense fallback={<JobListingsSkeleton />}>
+                <Reports />
+              </Suspense>
+            )}
           </TabsContent>
 
           <TabsContent value="notifications">
-            <WorkerNotifications />
+            {activeTab === "notifications" && (
+              <Suspense fallback={<JobListingsSkeleton />}>
+                <WorkerNotifications />
+              </Suspense>
+            )}
           </TabsContent>
 
           <TabsContent value="profile">
-            <WorkerProfile onEdit={() => setEditProfileOpen(true)} />
+            {activeTab === "profile" && (
+              <Suspense fallback={<JobListingsSkeleton />}>
+                <WorkerProfile onEdit={() => setEditProfileOpen(true)} />
+              </Suspense>
+            )}
           </TabsContent>
 
           <TabsContent value="workerAssignments">
-            <WorkerAssignment />
+            {activeTab === "workerAssignments" && (
+              <Suspense fallback={<JobListingsSkeleton />}>
+                <WorkerAssignment />
+              </Suspense>
+            )}
           </TabsContent>
         </Tabs>
       </main>
@@ -234,6 +297,29 @@ const WorkerDashboard = () => {
         userName="John Smith"
         userRole="Construction Worker"
       />
+
+      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will leave your worker dashboard and need to sign in again to continue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={signingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={signingOut}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleLogout();
+              }}
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

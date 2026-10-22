@@ -1,9 +1,10 @@
 import { Outlet } from "react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { socket } from "@/socket";
+import { API_ORIGIN } from "@/lib/apiOrigin";
 
 interface UserNotification {
   _id: string;
@@ -21,6 +22,17 @@ interface UserNotification {
 export default function WorkerLayout() {
   const queryClient = useQueryClient();
 
+  const { data: profileData } = useQuery({
+    queryKey: ["profile"],
+    queryFn: async () => {
+      const res = await axios.get(`${API_ORIGIN}/api/pro/worker/profile`, {
+        withCredentials: true,
+      });
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
     socket.on("connect", () => {
       console.log("Socket connected:", socket.id);
@@ -37,38 +49,17 @@ export default function WorkerLayout() {
   }, []);
 
   useEffect(() => {
-    let active = true;
+    const id = profileData?.WorkerProf?._id;
+    if (!id) return;
 
-    const init = async () => {
-      try {
-        const res = await axios.get(
-          "http://localhost:8920/api/pro/worker/profile",
-          { withCredentials: true }
-        );
+    socket.auth = { workerId: id };
 
-        const id = res.data.WorkerProf._id;
+    if (socket.connected) {
+      socket.disconnect();
+    }
 
-        socket.auth = { workerId: id };
-
-        if (socket.connected) {
-          socket.disconnect();
-        }
-
-        socket.connect();
-
-        console.log("Connecting with workerId:", id);
-      } catch (err) {
-        console.error("Failed to fetch worker profile");
-      }
-    };
-
-    init();
-
-    return () => {
-      active = false;
-      socket.off("notification:worker:new");
-    };
-  }, []);
+    socket.connect();
+  }, [profileData?.WorkerProf?._id]);
 
   useEffect(() => {
     const handleNotification = (notification: UserNotification) => {

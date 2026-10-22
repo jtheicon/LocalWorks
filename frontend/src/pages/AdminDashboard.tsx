@@ -1,14 +1,15 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { lazy, Suspense, useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useJobsStore } from "@/lib/jobsStore";
 import { useReviewsStore } from "@/lib/reviewsStore";
 import { exportToCSV } from "@/lib/csvExport";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import AdminHeader from "@/components/admin/AdminHeader";
 import AdminAnalytics from "@/components/admin/AdminAnalytics";
-import AdminReports from "@/components/admin/AdminReports";
+import AdminReportsSkeleton from "@/components/admin/AdminReportsSkeleton";
 import AllPostedJobs from "@/components/admin/AllPostedJobs";
 import AdminProfiles from "@/components/admin/AdminProfiles";
+import AdminReactivationRequests from "@/components/admin/AdminReactivationRequests";
 import AdminNotifications from "@/components/admin/AdminNotifications";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
@@ -16,13 +17,28 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
+import {
+  ADMIN_API,
+  adminQueryKeys,
+  invalidateAdminLifecycleData,
+  fetchAdminReports,
+  ADMIN_REPORTS_STALE_MS,
+} from "@/lib/adminConnect";
+
+const AdminReports = lazy(() => import("@/components/admin/AdminReports"));
 
 axios.defaults.withCredentials = true
 
 const AdminDashboard = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("dashboard");
+
+  useEffect(() => {
+    const tab = (location.state as { tab?: string } | null)?.tab;
+    if (tab) setActiveTab(tab);
+  }, [location.state]);
   const jobs = useJobsStore((s) => s.jobs);
   const removeJob = useJobsStore((s) => s.removeJob);
   const updateJobStatus = useJobsStore((s) => s.updateJobStatus);
@@ -32,14 +48,31 @@ const AdminDashboard = () => {
     setActiveTab(tab);
 
     queryClient.invalidateQueries({
-      queryKey: ['adminDashboard'],
-      refetchType: 'active',
+      queryKey: adminQueryKeys.dashboard,
+      refetchType: "active",
     });
-    queryClient.invalidateQueries({ queryKey: ['adminAnalytics'] });
+    queryClient.invalidateQueries({ queryKey: adminQueryKeys.analytics });
+
+    if (tab === "dashboard") {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.cleanupPreview });
+    }
+    if (tab === "profiles" || tab === "reactivation") {
+      invalidateAdminLifecycleData(queryClient);
+    }
+    if (tab === "notifications") {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.notifications });
+    }
+    if (tab === "reports") {
+      void queryClient.prefetchQuery({
+        queryKey: adminQueryKeys.reports,
+        queryFn: fetchAdminReports,
+        staleTime: ADMIN_REPORTS_STALE_MS,
+      });
+    }
   };
 
   const Dashboard = async () => {
-    const result = await axios.get("http://localhost:8920/api/admin/dashboard", { withCredentials: true })
+    const result = await axios.get(`${ADMIN_API}/dashboard`, { withCredentials: true })
     return result.data
   }
   
@@ -51,7 +84,7 @@ const AdminDashboard = () => {
   }
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['adminDashboard'],
+    queryKey: adminQueryKeys.dashboard,
     queryFn: Dashboard,
   })
 
@@ -110,16 +143,24 @@ const AdminDashboard = () => {
       return <AdminProfiles />;
     }
 
+    if (activeTab === "reactivation") {
+      return <AdminReactivationRequests />;
+    }
+
     if (activeTab === "notifications") {
       return <AdminNotifications />;
     }
 
     if (activeTab === "reports") {
-      return <AdminReports jobs={JOBS} />;
+      return (
+        <Suspense fallback={<AdminReportsSkeleton />}>
+          <AdminReports jobs={JOBS} />
+        </Suspense>
+      );
     }
 
     return (
-      <main className="flex-1 p-6 space-y-6 overflow-auto">
+      <main className="p-6 space-y-6">
         <div>
           <h2 className="text-xl font-bold text-foreground">Platform Overview</h2>
           <p className="text-sm text-muted-foreground">
@@ -133,13 +174,13 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-muted/30">
+    <div className="flex h-screen overflow-hidden bg-muted/30">
       <AdminSidebar activeTab={activeTab} onTabChange={handleTabChange} />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <AdminHeader />
 
-        <div className="flex-1 flex">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           {renderContent()}
         </div>
       </div>

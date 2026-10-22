@@ -15,7 +15,7 @@ export class OTPError extends Error {
   }
 }
 
-export const sendEmail = async (to: string, subject: string, text: string) => {
+export const sendEmail = async (to: string, subject: string, text: string, html?: string) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -24,7 +24,13 @@ export const sendEmail = async (to: string, subject: string, text: string) => {
     },
   });
 
-  await transporter.sendMail({ from: process.env.EMAIL_OWNER, to, subject, text });
+  await transporter.sendMail({
+    from: process.env.EMAIL_OWNER,
+    to,
+    subject,
+    text,
+    ...(html ? { html } : {}),
+  });
 };
 
 // Generates a code, stores only its hash, and emails it. Returns the expiry time.

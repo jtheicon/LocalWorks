@@ -84,6 +84,14 @@ export const markAsReadAdminSchema = z.object({
     .min(1, "Notification ID is required")
 })
 
+export const adminNotificationReadBodySchema = z.object({
+  read: z.boolean(),
+})
+
+export const adminNotificationBulkReadSchema = adminNotificationReadBodySchema.extend({
+  scope: z.enum(["all", "unread", "job", "account", "report"]).optional(),
+})
+
 
 // Add New Company:
 export const AddNewCompanySchema = z.object({

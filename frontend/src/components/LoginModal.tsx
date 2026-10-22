@@ -75,7 +75,11 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
       })
       .catch(function (error: any) {
         if (error.response) {
-          toast.error(error.response.data.message)
+          const d = error.response.data
+          toast.error(d.message)
+          if (d.code === "ACCOUNT_DEACTIVATED") {
+            toast.info("Open the reactivation link from your deactivation email, or contact support.")
+          }
         } else if (error.request) {
           toast.error(error.request)
         } else {
@@ -94,7 +98,11 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
       })
       .catch(function (error: any) {
         if (error.response) {
-          toast.error(error.response.data.message)
+          const d = error.response.data
+          toast.error(d.message)
+          if (d.code === "ACCOUNT_DEACTIVATED") {
+            toast.info("Open the reactivation link from your deactivation email, or contact support.")
+          }
         }
       })
   }

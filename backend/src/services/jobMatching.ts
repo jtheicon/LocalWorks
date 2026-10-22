@@ -10,7 +10,10 @@ import { MODEL, describeError } from "../ai/verification";
 import { AiLevel, JobMatch, scoreJob, skillKey, uniqueSkills, unresolvedSkills } from "../matching/skillScore";
 
 // The job list waits this long for new AI verdicts; a slower call still finishes and is cached.
-const AI_WAIT_MS = 8000;
+const AI_WAIT_MS = Math.min(
+  8000,
+  Math.max(0, Number(process.env.AI_JOB_MATCH_WAIT_MS) || 2500),
+);
 const AI_BATCH = 60; // job skills per Gemini call
 
 // "on": AI verdicts used; "off": AI disabled or not needed; "unavailable": AI failed or is still working.

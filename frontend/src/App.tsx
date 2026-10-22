@@ -19,10 +19,18 @@ import EmployerProfile from "./components/employer/EmployerProfile";
 import NumberEmployees from "./pages/NumberEmployees";
 import OpenPositions from "./pages/OpenPositions";
 import AdminLayout from "./components/admin/AdminLayout";
+import ReactivationRequest from "./pages/ReactivationRequest";
 import WorkerLayout from "./components/worker/WorkerLayout";
 import EmployerLayout from "./components/employer/EmployerLayout";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -45,6 +53,7 @@ const App = () => (
           <Route path="/total-applications" element={<NumberEmployees />} />
           <Route path="/images" element={<Images />} />
           <Route path="/admin" element={<AdminLogin />} />
+          <Route path="/account/reactivation/request" element={<ReactivationRequest />} />
           <Route element={<WorkerLayout />}>
             <Route path="/worker-dashboard" element={<WorkerDashboard />} />
           </Route>

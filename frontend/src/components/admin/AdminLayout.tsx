@@ -4,6 +4,12 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { socket } from "@/socket";
+import {
+  invalidateAdminLifecycleData,
+  invalidateAdminPlatformData,
+  ADMIN_API,
+  adminQueryKeys,
+} from "@/lib/adminConnect";
 
 interface Notification {
   _id: string;
@@ -17,10 +23,7 @@ export default function AdminLayout() {
   useEffect(() => {
     const initAdminSocket = async () => {
       try {
-        const res = await axios.get(
-          "http://localhost:8920/api/admin/profile",
-          { withCredentials: true }
-        );
+        const res = await axios.get(`${ADMIN_API}/profile`, { withCredentials: true });
 
         const adminId = res.data.AdminProfile._id;
 
@@ -53,23 +56,35 @@ export default function AdminLayout() {
     };
   }, []);
 
-  // 3. notification listener
+  // 3. Realtime: keep dashboard account health, user management, and jobs in sync
   useEffect(() => {
-    const handleNewNotification = (notification: Notification) => {
-      queryClient.setQueryData(
-        ["adminNotifications"],
-        (old: Notification[] = []) => [
-          notification,
-          ...old.filter(n => n._id !== notification._id),
-        ]
-      );
+    const onLifecycleUpdated = () => {
+      invalidateAdminLifecycleData(queryClient);
+    };
 
+    const handleNewNotification = (notification: Notification) => {
+      const row = {
+        ...notification,
+        _id: String(notification._id),
+        read: Boolean(notification.read),
+      };
+      queryClient.setQueryData(
+        adminQueryKeys.notifications,
+        (old: Notification[] = []) => [
+          row,
+          ...old.filter((n) => String(n._id) !== row._id),
+        ],
+      );
+      invalidateAdminPlatformData(queryClient);
+      invalidateAdminLifecycleData(queryClient);
       toast.success(notification.title);
     };
 
+    socket.on("admin:user-lifecycle:updated", onLifecycleUpdated);
     socket.on("notification:new", handleNewNotification);
 
     return () => {
+      socket.off("admin:user-lifecycle:updated", onLifecycleUpdated);
       socket.off("notification:new", handleNewNotification);
     };
   }, [queryClient]);

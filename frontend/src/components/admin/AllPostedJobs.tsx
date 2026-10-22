@@ -92,7 +92,7 @@ const AllPostedJobs = ({ jobs, onUpdateStatus, onDelete }: AllPostedJobsProps) =
 
   return (
     <>
-      <main className="flex-1 p-6 space-y-6 overflow-auto">
+      <main className="p-6 space-y-6">
         <div>
           <h2 className="text-xl font-bold text-foreground">Employer Companies</h2>
           <p className="text-sm text-muted-foreground">View employer companies and manage their job posts.</p>

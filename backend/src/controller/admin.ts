@@ -19,11 +19,14 @@ import {
   SkillsInformation,
   CompanySchema,
   markAsReadAdminSchema,
+  adminNotificationReadBodySchema,
+  adminNotificationBulkReadSchema,
   AdminIdSchema,
   VerifyWorkerSchema,
   UpdateReportSchema
 } from "../validator/admin";
 import { instanceErrors, mainError } from "../errors/showErrors";
+import { resetInactivityCycleOnReactivation } from "../services/activityTracking";
 import Employer from "../model/Employer";
 import Job from "../model/Job";
 import Skill from "../model/Skill";
@@ -40,7 +43,15 @@ import UserNotification from "../model/UserNotification";
 import { JobPostPayload } from "../notif-payload/user";
 import Admin from "../model/Admin";
 import { getIO } from "../socket";
+import { emitAdminUserLifecycleUpdated } from "../services/adminLifecycleSocket";
 import Report from "../model/Report";
+import { getApplicationHealthMetrics } from "../services/applicationHealthMetrics";
+import {
+  workerGrowthPipeline,
+  jobsByIndustryPipeline,
+  jobPerformancePipeline,
+  categoryTablePipeline,
+} from "../services/adminReportsAggregates";
 import bcrypt from "bcryptjs";
 
 // Update Admin Password:
@@ -160,9 +171,17 @@ export const Dashboard = async (req: Request, res: Response) => {
 // Update all notifications:
 export const markNotificationsAsRead = async (req: Request, res: Response) => {
   try {
-    const { scope } = req.body;
+    const bulkReadParsed = adminNotificationBulkReadSchema.safeParse(req.body);
+    if (!bulkReadParsed.success) {
+      return res.status(400).json({
+        success: false,
+        message: "Request body must include read: true or read: false",
+      });
+    }
 
-    const filter: any = {};
+    const { read, scope = "all" } = bulkReadParsed.data;
+
+    const filter: Record<string, unknown> = {};
 
     if (scope === "unread") {
       filter.read = false;
@@ -176,12 +195,12 @@ export const markNotificationsAsRead = async (req: Request, res: Response) => {
       filter.category = "account";
     }
 
-    if (scope === "all") {
-      // no filter
+    if (scope === "report") {
+      filter.category = "report";
     }
 
     const result = await AdminNotification.updateMany(filter, {
-      $set: { read: true },
+      $set: { read },
     });
 
     return res.status(200).json({
@@ -214,8 +233,22 @@ export const MarkAsReadAdmin = async (req: Request, res: Response) => {
 
   const { _id } = validated.data
 
+  const bodyParsed = adminNotificationReadBodySchema.safeParse(req.body)
+  if (!bodyParsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: "Request body must include read: true or read: false",
+    })
+  }
+
+  const { read } = bodyParsed.data
+
   try {
-    const notification = await AdminNotification.findById(_id)
+    const notification = await AdminNotification.findByIdAndUpdate(
+      _id,
+      { $set: { read } },
+      { new: true },
+    )
 
     if (!notification) {
       return res.status(404).json({
@@ -224,20 +257,22 @@ export const MarkAsReadAdmin = async (req: Request, res: Response) => {
       })
     }
 
-    notification.read = true
-
-    await notification.save()
+    const payload = {
+      ...notification.toObject(),
+      _id: String(notification._id),
+      read: Boolean(notification.read),
+    };
 
     return res.status(200).json({
       success: true,
-      message: "Notification marked as read",
-      notification
+      message: read ? "Notification marked as read" : "Notification marked as unread",
+      notification: payload,
     })
 
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "Failed to mark notification as read"
+      message: "Failed to update notification read state",
     })
   }
 }
@@ -247,14 +282,17 @@ export const MarkAsReadAdmin = async (req: Request, res: Response) => {
 // Display Admin Notifications:
 export const AdminNotifications = async (req: Request, res: Response) => {
   try {
-    const notifications = await AdminNotification
-      .find()
-      .sort({ time: -1 })
+    const rows = await AdminNotification.find().sort({ time: -1 }).lean();
+    const notifications = rows.map((n) => ({
+      ...n,
+      _id: String(n._id),
+      read: Boolean(n.read),
+    }));
 
     return res.status(200).json({
       success: true,
       count: notifications.length,
-      notifications
+      notifications,
     })
     
   } catch (error) {
@@ -444,15 +482,50 @@ export const UpdateWorkersEmployersInformation = async (req: Request, res: Respo
       const EmployerUpdate = await Employer.findOne({ _id })
       if (!EmployerUpdate) return res.status(404).json({ success: false, message: "Employer not found"})
 
-      EmployerUpdate.status = status || EmployerUpdate.status
-      await EmployerUpdate.save()
+      const wasDeactivated = EmployerUpdate.status === "not_active"
+      if (status === "not_active") {
+        const previousStatus = EmployerUpdate.status
+        EmployerUpdate.status = "not_active"
+        EmployerUpdate.set("deactivation", {
+          reason: "admin",
+          at: new Date(),
+          previousStatus,
+        })
+        await EmployerUpdate.save()
+      } else if (status === "active" && wasDeactivated) {
+        await resetInactivityCycleOnReactivation("employer", String(_id), req.user?.id)
+      } else if (status) {
+        EmployerUpdate.status = status
+        if (status === "active") EmployerUpdate.set("deactivation", null)
+        await EmployerUpdate.save()
+      }
     } else {
       const WorkerUpdate = await Worker.findOne({ _id })
       if (!WorkerUpdate) return res.status(404).json({ success: false, message: "Worker not found"})
 
-      WorkerUpdate.status = status || WorkerUpdate.status
-      await WorkerUpdate.save()
+      const wasDeactivated = WorkerUpdate.status === "not_active"
+      if (status === "not_active") {
+        const previousStatus = WorkerUpdate.status
+        WorkerUpdate.status = "not_active"
+        WorkerUpdate.set("deactivation", {
+          reason: "admin",
+          at: new Date(),
+          previousStatus,
+        })
+        await WorkerUpdate.save()
+      } else if (status === "active" && wasDeactivated) {
+        await resetInactivityCycleOnReactivation("worker", String(_id), req.user?.id)
+      } else if (status) {
+        WorkerUpdate.status = status
+        if (status === "active") WorkerUpdate.set("deactivation", null)
+        await WorkerUpdate.save()
+      }
     }
+
+    emitAdminUserLifecycleUpdated("status_change", {
+      userId: String(_id),
+      role: role as "worker" | "employer",
+    });
 
     return res.status(200).json({
       success: true,
@@ -514,6 +587,11 @@ export const DeleteWorkerEmployer = async (req: Request, res: Response) => {
       await WorkerUpdate.save()
     }
 
+    emitAdminUserLifecycleUpdated("status_change", {
+      userId: String(_id),
+      role: role as "worker" | "employer",
+    });
+
     return res.status(200).json({
       success: true,
       message: "Deleted successfully!",
@@ -526,293 +604,27 @@ export const DeleteWorkerEmployer = async (req: Request, res: Response) => {
 // Reports:
 export const Reports = async (req: Request, res: Response) => {
   try {
-    const Industries = await Industry.find().sort({ createdAt: -1 }) || [];
-    const ReportedWorkers = await Report.find().sort({ createdAt: -1 })
-                                        .populate("workerId")
-                                        .populate("employerId");
-
-    const workerGrowth = await Worker.aggregate([
-      {
-        $group: {
-          _id: {
-            year: { $year: "$createdAt" },
-            month: { $month: "$createdAt" },
-          },
-
-          newWorkers: { $sum: 1 },
-
-          activeWorkers: {
-            $sum: {
-              $cond: [
-                { $eq: ["$status", "active"] },
-                1,
-                0
-              ]
-            }
-          },
-        },
-      },
-
-      {
-        $sort: {
-          "_id.year": 1,
-          "_id.month": 1,
-        },
-      },
-
-      {
-        $project: {
-          _id: 0,
-
-          month: {
-            $concat: [
-              {
-                $arrayElemAt: [
-                  [
-                    "",
-                    "Jan","Feb","Mar","Apr","May","Jun",
-                    "Jul","Aug","Sep","Oct","Nov","Dec"
-                  ],
-                  "$_id.month",
-                ],
-              },
-
-              " ",
-
-              { $toString: "$_id.year" },
-            ],
-          },
-
-          newWorkers: 1,
-          activeWorkers: 1,
-        },
-      },
+    const [
+      Industries,
+      ReportedWorkers,
+      workerGrowth,
+      jobsByIndustry,
+      jobPerformance,
+      categoryTable,
+      applicationHealth,
+    ] = await Promise.all([
+      Industry.find().sort({ createdAt: -1 }).lean(),
+      Report.find()
+        .sort({ createdAt: -1 })
+        .populate("workerId", "email name")
+        .populate("employerId", "email company")
+        .lean(),
+      Worker.aggregate(workerGrowthPipeline),
+      Job.aggregate(jobsByIndustryPipeline),
+      Job.aggregate(jobPerformancePipeline),
+      Job.aggregate(categoryTablePipeline),
+      getApplicationHealthMetrics(),
     ]);
-
-    // PAYMENT SUMMARY DATA (this is what your chart needs)
-    const jobsByIndustry = await Job.aggregate([
-      {
-        $match: {
-          category: { $ne: null }
-        }
-      },
-      {
-        $group: {
-          _id: "$category",
-          value: { $sum: 1 }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          name: "$_id",
-          value: 1
-        }
-      },
-      {
-        $sort: { value: -1 }
-      }
-    ]);
-
-  const jobPerformance = await Job.aggregate([
-    {
-      $group: {
-        _id: {
-          year: { $year: "$createdAt" },
-          month: { $month: "$createdAt" },
-        },
-        posted: { $sum: 1 },
-        filled: {
-          $sum: {
-            $cond: [
-              { $lt: [{ $ifNull: ["$positions", 0] }, 1] },
-              1,
-              0,
-            ],
-          },
-        },
-        expired: {
-          $sum: {
-            $cond: [
-              { $lt: [{ $toDate: "$applyBefore" }, "$$NOW"] },
-              1,
-              0,
-            ],
-          },
-        },
-      },
-    },
-    {
-      $sort: {
-        "_id.year": 1,
-        "_id.month": 1,
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        year: "$_id.year",
-        month: {
-          $arrayElemAt: [
-            [
-              "",
-              "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-            ],
-            "$_id.month"
-          ]
-        },
-        posted: 1,
-        filled: 1,
-        expired: 1,
-      },
-    },
-  ]);
-
-  console.log(jobPerformance);
-  
-  const categoryTable = await Job.aggregate([
-    {
-      $lookup: {
-        from: "workers",
-        localField: "category",
-        foreignField: "industry",
-        as: "workers",
-      },
-    },
-
-    {
-      $lookup: {
-        from: "applications",
-        localField: "_id",
-        foreignField: "job",
-        as: "applications"
-      }
-    },
-
-    {
-      $addFields: {
-        applications: {
-          $cond: [
-            { $isArray: "$applications" },
-            "$applications",
-            []
-          ]
-        }
-      }
-    },
-
-{
-  $group: {
-    _id: "$category",
-
-    totalApplications: {
-      $sum: { $size: "$applications" }
-    },
-
-    acceptedApplications: {
-      $sum: {
-        $size: {
-          $filter: {
-            input: "$applications",
-            as: "a",
-            cond: { $eq: ["$$a.status", "Accepted"] }
-          }
-        }
-      }
-    },
-
-  activeJobs: {
-    $sum: {
-      $cond: [
-        {
-          $and: [
-            { $gt: [{ $toDate: "$applyBefore" }, "$$NOW"] },
-            {
-              $not: {
-                $in: [
-                  "$status",
-                  ["DELETED", "DECLINED", "PENDING"]
-                ]
-              }
-            }
-          ]
-        },
-        1,
-        0
-      ]
-    }
-  },
-
-    totalJobs: { $sum: 1 },
-  }
-},
-
-{
-  $addFields: {
-    workers: {
-      $reduce: {
-        input: "$workers",
-        initialValue: [],
-        in: { $concatArrays: ["$$value", "$$this"] }
-      }
-    }
-  }
-},
-
-{
-  $project: {
-    _id: 0,
-    name: "$_id",
-
-    activeJobs: 1,
-    totalApplications: 1,
-
-    avgApplications: {
-      $round: [
-        {
-          $cond: [
-            { $eq: ["$totalJobs", 0] },
-            0,
-            { $divide: ["$totalApplications", "$totalJobs"] }
-          ]
-        },
-        0
-      ]
-    },
-
-    acceptanceRate: {
-      $round: [
-        {
-          $cond: [
-            { $eq: ["$totalApplications", 0] },
-            0,
-            {
-              $multiply: [
-                { $divide: ["$acceptedApplications", "$totalApplications"] },
-                100
-              ]
-            }
-          ]
-        },
-        0
-      ]
-    },
-
-    acceptedApplications: {
-      $sum: {
-        $size: {
-          $filter: {
-            input: { $ifNull: ["$applications", []] },
-            as: "a",
-            cond: { $eq: ["$$a.status", "Accepted"] }
-          }
-        }
-      }
-    }
-  }
-}
-  ]);
 
     return res.status(200).json({
       success: true,
@@ -821,9 +633,9 @@ export const Reports = async (req: Request, res: Response) => {
       workerGrowth,
       jobPerformance,
       categoryTable,
-      ReportedWorkers
+      ReportedWorkers,
+      applicationHealth,
     });
-
   } catch (error) {
     mainError(error, res);
   }

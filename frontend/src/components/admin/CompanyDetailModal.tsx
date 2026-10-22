@@ -19,6 +19,9 @@ import { useState } from "react";
 import JobDetailModal from "./JobDetailModal";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
+import { ADMIN_API } from "@/lib/adminConnect";
+
+axios.defaults.withCredentials = true;
 
 interface CompanyDetailModalProps {
   company: string;
@@ -52,9 +55,7 @@ const CompanyDetailModal = ({
   const contactPhone = jobs.find((j) => j.contactPhone)?.contactPhone;
 
   const fetchApplicants = async (company: string) => {
-    const result = await axios.get(
-      `http://localhost:8920/api/admin/applications/${company}`
-    );
+    const result = await axios.get(`${ADMIN_API}/applications/${encodeURIComponent(company)}`);
     return result.data;
   };
 

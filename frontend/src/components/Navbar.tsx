@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import LoginModal from "./LoginModal";
-import SignUpModal from "./SignUpModal";
 import logo from "@/assets/logo.avif";
+
+const LoginModal = lazy(() => import("./LoginModal"));
+const SignUpModal = lazy(() => import("./SignUpModal"));
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -136,17 +137,24 @@ const Navbar = () => {
         </div>
       </nav>
 
-      {/* Modals */}
-      <LoginModal 
-        open={loginOpen} 
-        onOpenChange={setLoginOpen} 
-        onSwitchToSignUp={handleSwitchToSignUp}
-      />
-      <SignUpModal 
-        open={signUpOpen} 
-        onOpenChange={setSignUpOpen} 
-        onSwitchToLogin={handleSwitchToLogin}
-      />
+      {(loginOpen || signUpOpen) && (
+        <Suspense fallback={null}>
+          {loginOpen && (
+            <LoginModal
+              open={loginOpen}
+              onOpenChange={setLoginOpen}
+              onSwitchToSignUp={handleSwitchToSignUp}
+            />
+          )}
+          {signUpOpen && (
+            <SignUpModal
+              open={signUpOpen}
+              onOpenChange={setSignUpOpen}
+              onSwitchToLogin={handleSwitchToLogin}
+            />
+          )}
+        </Suspense>
+      )}
     </>
   );
 };

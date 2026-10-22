@@ -1,9 +1,21 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, Briefcase, FileText, BarChart3, Bell, Users, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import logo from "@/assets/logo.avif";
 import axios from "axios";
+import { ADMIN_ORIGIN } from "@/lib/adminConnect";
 
 axios.defaults.withCredentials = true
 
@@ -17,14 +29,18 @@ const navItems = [
   { id: "jobs", label: "Posted Jobs", icon: Briefcase },
   { id: "reports", label: "Reports", icon: BarChart3 },
   { id: "notifications", label: "Notification", icon: Bell },
-  { id: "profiles", label: "Profiles", icon: Users },
+  { id: "profiles", label: "User management", icon: Users },
+  { id: "reactivation", label: "Reactivation", icon: FileText },
 ];
 
 const AdminSidebar = ({ activeTab, onTabChange }: AdminSidebarProps) => {
   const navigate = useNavigate();
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const handleLogout = async () => {
-    await axios.post("http://localhost:8920/api/pro/logout", {}, { withCredentials: true })
+    setSigningOut(true);
+    await axios.post(`${ADMIN_ORIGIN}/api/pro/logout`, {}, { withCredentials: true })
       .then(function (response) {
         if (response.data) {
           navigate("/admin")
@@ -38,10 +54,15 @@ const AdminSidebar = ({ activeTab, onTabChange }: AdminSidebarProps) => {
           toast.info(error.response.data.message)
         }
       })
+      .finally(() => {
+        setSigningOut(false);
+        setSignOutOpen(false);
+      });
   };
 
   return (
-    <aside className="w-56 min-h-screen bg-sidebar-background border-r border-sidebar-border flex flex-col">
+    <>
+      <aside className="flex h-full w-56 shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar-background">
       {/* Logo */}
       <div className="p-6 flex flex-col items-center gap-2">
         <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center shadow-lg ring-4 ring-primary/20">
@@ -77,14 +98,38 @@ const AdminSidebar = ({ activeTab, onTabChange }: AdminSidebarProps) => {
       <div className="p-3 border-t border-sidebar-border">
         <Button
           variant="ghost"
-          onClick={handleLogout}
+          onClick={() => setSignOutOpen(true)}
           className="w-full justify-start gap-3 h-10 text-sm text-destructive hover:text-destructive hover:bg-destructive/10"
         >
           <LogOut className="w-4 h-4" />
           Sign out
         </Button>
       </div>
-    </aside>
+      </aside>
+
+      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will leave the admin dashboard and need to sign in again to continue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={signingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={signingOut}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleLogout();
+              }}
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
 

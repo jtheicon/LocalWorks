@@ -6,8 +6,10 @@
   "scripts": {
     "test": "node -r ts-node/register/transpile-only --test src/**/*.test.ts",
     "eval:matching": "dotenvx run -- ts-node src/scripts/evalMatching.ts",
+    "seed": "dotenvx run -- ts-node src/scripts/seedCatalog.ts",
     "seed:jobs": "dotenvx run -- ts-node src/scripts/seedJobs.ts",
     "seed:demo": "dotenvx run -- ts-node src/scripts/seedDemo.ts",
+    "seed:inactivity": "dotenvx run -- ts-node src/scripts/seedInactivityDemo.ts",
     "start": "dotenvx run -- nodemon --watch 'src/**/*.ts'"
   },
   "keywords": [],

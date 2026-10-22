@@ -29,6 +29,7 @@ import JobDetailModal from "./JobDetailModal";
 import axios from "axios";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ADMIN_API, ADMIN_ORIGIN, adminQueryKeys } from "@/lib/adminConnect";
 
 interface CompanyDetailModalProps {
   open: boolean;
@@ -64,7 +65,7 @@ const ReportDetailsModal = ({
   const updateReportStatus = async (_id: string, status: string) => {
     try {
       await axios.patch(
-        "http://localhost:8920/api/admin/update/report",
+        `${ADMIN_API}/update/report`,
         {
           _id,
           status,
@@ -74,7 +75,8 @@ const ReportDetailsModal = ({
         }
       );
 
-      RefetchData()
+      RefetchData();
+      await queryClient.invalidateQueries({ queryKey: adminQueryKeys.reports });
 
       toast.success("Report status updated");
     } catch (error) {
@@ -121,7 +123,7 @@ const ReportDetailsModal = ({
                 className="flex items-center gap-2"
               >
                 <a
-                  href={`http://localhost:8920/uploads/reports/${report.fileName}`}
+                  href={`${ADMIN_ORIGIN}/uploads/reports/${report.fileName}`}
                   target="_blank"
                   rel="noreferrer"
                   className="block h-10 min-w-0 flex-1 truncate rounded-md bg-gray-100 px-3 py-2 text-sm text-blue-600 underline transition-colors hover:bg-gray-200 hover:text-blue-800"

@@ -1,9 +1,11 @@
+import { lazy, Suspense } from "react";
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import HowItWorks from "@/components/HowItWorks";
-import Testimonials from "@/components/Testimonials";
 import CTABanner from "@/components/CTABanner";
 import Footer from "@/components/Footer";
+
+const Testimonials = lazy(() => import("@/components/Testimonials"));
 
 const Index = () => {
   return (
@@ -12,7 +14,9 @@ const Index = () => {
       <main>
         <Hero />
         <HowItWorks />
-        <Testimonials />
+        <Suspense fallback={null}>
+          <Testimonials />
+        </Suspense>
         <CTABanner />
       </main>
       <Footer />

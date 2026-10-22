@@ -9,6 +9,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import EditProfileModal from "./EditProfileModal";
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query";
@@ -26,29 +36,34 @@ interface DashboardHeaderProps {
 const DashboardHeader = () => {
   const navigate = useNavigate();
     
-      const [editProfileOpen, setEditProfileOpen] = useState(false);
-
-  const handleLogout = () => {
-    navigate("/");
-  };
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const EmployerProfilePage = () => {
     navigate("/employer-profile")
   }
 
-  const Logout = async () => {
-    await axios.post("http://localhost:8920/api/pro/logout", {}, { withCredentials: true })
-      .then(function (response) {
-        if (response.data) {
-          navigate("/")
-        }
-      })
-      .catch(function (error) {
-        if (error.response) {
-          alert(error.response.data.message)
-        }
-      })
-  }
+  const handleLogout = async () => {
+    setSigningOut(true);
+    try {
+      const response = await axios.post(
+        "http://localhost:8920/api/pro/logout",
+        {},
+        { withCredentials: true },
+      );
+      if (response.data) {
+        navigate("/");
+      }
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response) {
+        alert(error.response.data.message);
+      }
+    } finally {
+      setSigningOut(false);
+      setSignOutOpen(false);
+    }
+  };
 
   const employer = async () => {
     const result = await axios.get("http://localhost:8920/api/pro/employer/information")
@@ -130,7 +145,13 @@ const DashboardHeader = () => {
               Edit Profile
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => Logout()} className="cursor-pointer text-destructive">
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                setSignOutOpen(true);
+              }}
+              className="cursor-pointer text-destructive"
+            >
               <LogOut className="mr-2 h-4 w-4" />
               Logout
             </DropdownMenuItem>
@@ -138,6 +159,29 @@ const DashboardHeader = () => {
         </DropdownMenu>
       </div>
       <EditProfileModal open={editProfileOpen} onOpenChange={setEditProfileOpen} />
+
+      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will leave your employer dashboard and need to sign in again to continue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={signingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={signingOut}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleLogout();
+              }}
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </header>
   );
 };

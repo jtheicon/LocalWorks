@@ -17,9 +17,9 @@ import {
   ANALYTICS_QUERY_KEY, autoApprovalRate, fetchAdminAnalytics, sectorChartData, supplyDemandData, type AnalyticsData,
 } from "@/lib/dashboardCharts";
 
-axios.defaults.withCredentials = true;
+import { ADMIN_API, adminQueryKeys, invalidateAdminLifecycleData } from "@/lib/adminConnect";
 
-const API = "http://localhost:8920/api/admin";
+axios.defaults.withCredentials = true;
 
 interface CleanupPreview {
   inactivityMonths: number;
@@ -110,16 +110,15 @@ const AdminAnalytics = () => {
   });
 
   const { data: cleanup } = useQuery<CleanupPreview>({
-    queryKey: ["cleanupPreview"],
-    queryFn: async () => (await axios.get(`${API}/cleanup/preview`)).data,
+    queryKey: adminQueryKeys.cleanupPreview,
+    queryFn: async () => (await axios.get(`${ADMIN_API}/cleanup/preview`)).data,
   });
 
   const runCleanup = useMutation({
-    mutationFn: async () => (await axios.post(`${API}/cleanup/run`)).data,
+    mutationFn: async () => (await axios.post(`${ADMIN_API}/cleanup/run`)).data,
     onSuccess: (res) => {
       toast.success(res.message);
-      queryClient.invalidateQueries({ queryKey: ["cleanupPreview"] });
-      queryClient.invalidateQueries({ queryKey: ["adminAnalytics"] });
+      invalidateAdminLifecycleData(queryClient);
     },
     onError: () => toast.error("Failed to run account cleanup"),
   });
@@ -239,24 +238,29 @@ const AdminAnalytics = () => {
           </div>
         </ChartCard>
 
-        <ChartCard title="Account health" subtitle={`Accounts inactive for ${cleanup?.inactivityMonths ?? 6}+ months are deactivated automatically every day`}>
+        <ChartCard
+          title="Account health"
+          subtitle={`Same rules as User management: 3/4/5‑month emails, ${cleanup?.inactivityMonths ?? 6}+ months qualifying idle → auto‑deactivate (daily job). Updates live with WebSocket.`}
+        >
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Accounts</TableHead>
                 <TableHead className="text-right text-xs">Active</TableHead>
+                <TableHead className="text-right text-xs">Inactivity pipeline</TableHead>
                 <TableHead className="text-right text-xs">Pending</TableHead>
-                <TableHead className="text-right text-xs">Inactive</TableHead>
-                <TableHead className="text-right text-xs">Auto-deactivated</TableHead>
+                <TableHead className="text-right text-xs">Deactivated</TableHead>
+                <TableHead className="text-right text-xs">Auto (inactivity)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {(["workers", "employers"] as const).map((role) => (
                 <TableRow key={role}>
                   <TableCell className="text-sm capitalize">{role}</TableCell>
-                  <TableCell className="text-right text-sm">{accounts[role].active}</TableCell>
+                  <TableCell className="text-right text-sm">{accounts[role].platformActive}</TableCell>
+                  <TableCell className="text-right text-sm">{accounts[role].inactivityMonitoring}</TableCell>
                   <TableCell className="text-right text-sm">{accounts[role].pending}</TableCell>
-                  <TableCell className="text-right text-sm">{accounts[role].inactive}</TableCell>
+                  <TableCell className="text-right text-sm">{accounts[role].deactivated}</TableCell>
                   <TableCell className="text-right text-sm">{accounts[role].autoDeactivated}</TableCell>
                 </TableRow>
               ))}
@@ -320,8 +324,8 @@ const AdminAnalytics = () => {
               <div className="space-y-2">
                 <p>
                   {candidates.length
-                    ? `${candidates.length} account(s) have been inactive for ${cleanup?.inactivityMonths ?? 6}+ months. They will be hidden from listings and emailed. They can reactivate by logging in.`
-                    : "No accounts are currently inactive long enough to be deactivated."}
+                    ? `${candidates.length} account(s) have ${cleanup?.inactivityMonths ?? 6}+ months on the qualifying-activity clock. The job will deactivate them and send reactivation email links.`
+                    : "No accounts are currently eligible on the qualifying-activity clock."}
                 </p>
                 {candidates.length > 0 && (
                   <ul className="max-h-40 overflow-y-auto rounded border border-border p-2 text-xs">

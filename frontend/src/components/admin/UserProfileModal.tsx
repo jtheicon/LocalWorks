@@ -7,35 +7,115 @@ import CredibilityBadge, { CredibilityBreakdown, useCredibility } from "@/compon
 import { Phone, MapPin, Mail, FileText, Briefcase, User, Calendar } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { socket } from "@/socket";
+import { ADMIN_API, adminAssetUrl, adminQueryKeys, invalidateAdminLifecycleData } from "@/lib/adminConnect";
+import { resolveAdminUserStatus } from "@/lib/adminUserStatus";
 
 axios.defaults.withCredentials = true;
 
+type AdminLifecycleInsight = {
+  status?: string;
+  lifecycle?: string;
+  automatedLifecycle?: string;
+  monthsSinceActivity?: number | null;
+  automatedMonthsSinceActivity?: number | null;
+  monthsSinceRegistration?: number | null;
+  activityBasis?: string;
+  lastActiveAt?: string | null;
+  lastQualifyingActivityAt?: string | null;
+  qualifyingLastActiveAt?: string | null;
+  eligibleForAutoDeactivation?: boolean;
+  inactivityTracked?: boolean;
+  inactivityWarningStage?: number;
+  nextMilestoneMonths?: number | null;
+  reactivationRequestStatus?: string | null;
+  deactivation?: { reason?: string } | null;
+};
+
 interface UserProfileModalProps {
   user: UserProfile;
+  lifecycle?: AdminLifecycleInsight;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdateStatus: (id: number, status: UserProfile["status"]) => void;
   onDelete: (id: number) => void;
 }
 
-const UTC_Converter = (createdAt) => {
-  const splitDateAndTime = createdAt.split("T");
-  const date = splitDateAndTime[0].split("-");
-  const months = ["", "Jan", "Feb", "Mar", "Apr", "May", "June", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const formatJoinedDate = (createdAt: string | Date | null | undefined): string => {
+  if (createdAt == null || createdAt === "") return "—";
 
-  return months[Number(date[1])] + " " + date[1 + 1] + ", " + date[0];
+  const iso =
+    createdAt instanceof Date
+      ? createdAt.toISOString()
+      : typeof createdAt === "string"
+        ? createdAt
+        : "";
+
+  const datePart = iso.split("T")[0];
+  if (!datePart) return "—";
+
+  const [year, month, day] = datePart.split("-");
+  const monthIndex = Number(month);
+  if (!year || !day || monthIndex < 1 || monthIndex > 12) return "—";
+
+  const months = ["", "Jan", "Feb", "Mar", "Apr", "May", "June", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[monthIndex]} ${day}, ${year}`;
 };
 
-const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) => {
+const UserProfileModal = ({ user, lifecycle: lifecycleFallback, open, onOpenChange }: UserProfileModalProps) => {
   const queryClient = useQueryClient();
+  const userId = String(user._id ?? user.id ?? "");
+  const role = user.role as "worker" | "employer";
+
+  const { data: lifecyclePayload } = useQuery({
+    queryKey: [...adminQueryKeys.lifecycleUser, role, userId],
+    queryFn: async () => {
+      const res = await axios.get(`${ADMIN_API}/users/lifecycle/${role}/${userId}`, {
+        withCredentials: true,
+      });
+      return {
+        user: res.data.user as AdminLifecycleInsight,
+        policy: res.data.policy as { deactivationMonths?: number } | undefined,
+      };
+    },
+    enabled: open && Boolean(userId) && (role === "worker" || role === "employer"),
+  });
+
+  const liveLifecycle = lifecyclePayload?.user;
+
+  useEffect(() => {
+    if (!open) return;
+    const onLifecycleUpdated = () => {
+      void queryClient.invalidateQueries({ queryKey: [...adminQueryKeys.lifecycleUser, role, userId] });
+    };
+    socket.on("admin:user-lifecycle:updated", onLifecycleUpdated);
+    return () => {
+      socket.off("admin:user-lifecycle:updated", onLifecycleUpdated);
+    };
+  }, [open, queryClient, role, userId]);
+
+  const lifecycle = liveLifecycle ?? lifecycleFallback;
+  const deactivationMonths = lifecyclePayload?.policy?.deactivationMonths ?? 6;
+
+  const unified = resolveAdminUserStatus(
+    {
+      status: lifecycle?.status ?? user.status,
+      lifecycle: lifecycle?.lifecycle,
+      monthsSinceActivity: lifecycle?.monthsSinceActivity,
+      reactivationRequestStatus: lifecycle?.reactivationRequestStatus,
+    },
+    deactivationMonths,
+  );
+
   const { data: scores = {} } = useCredibility(user?.role ?? "worker", open ? [user?._id] : []);
   const credibility = user?._id ? scores[user._id] : undefined;
 
   const UpdateWorkerEmployer = async (_id, status, role) => {
     try {
       const response = await axios.put(
-        "http://localhost:8920/api/admin/updateStatus",
+        `${ADMIN_API}/updateStatus`,
         { _id, status, role },
         { withCredentials: true }
       );
@@ -47,9 +127,7 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
 
         onOpenChange(false);
 
-        await queryClient.invalidateQueries({
-          queryKey: ["AdminProfilesInfo"],
-        });
+        invalidateAdminLifecycleData(queryClient);
       }
     } catch (error) {
       if (error.response) {
@@ -61,7 +139,7 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
   const DeleteWorkerEmployer = async (_id, status, role) => {
     try {
       const response = await axios.put(
-        "http://localhost:8920/api/admin/deleteUser",
+        `${ADMIN_API}/deleteUser`,
         { _id, status, role },
         { withCredentials: true }
       );
@@ -74,21 +152,13 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
         onOpenChange(false);
 
         // THIS IS THE IMPORTANT FIX
-        await queryClient.invalidateQueries({
-          queryKey: ["AdminProfilesInfo"],
-        });
+        invalidateAdminLifecycleData(queryClient);
       }
     } catch (error) {
       if (error.response) {
         toast.info(error.response.data.message);
       }
     }
-  };
-
-  const statusColor = {
-    active: "bg-green-500/10 text-green-600 border-green-500/20",
-    not_active: "bg-destructive/10 text-destructive border-destructive/20",
-    pending: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
   };
 
   return (
@@ -116,7 +186,7 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
                             }}
                           >
                             <img
-                              src={`http://localhost:8920${user.photo}`}
+                              src={adminAssetUrl(user.photo)}
                               alt="User avatar"
                               style={{
                                 position: "absolute",
@@ -136,20 +206,75 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
               <h3 className="font-semibold text-foreground">{user.email}</h3>
               <p className="text-sm text-muted-foreground">{user.jobTitle || user.company}</p>
 
-              <div className="flex gap-2 mt-1">
+              <div className="flex flex-wrap gap-2 mt-1">
                 <Badge variant="outline" className="text-xs capitalize">
                   {user.role}
                 </Badge>
-                <Badge className={`text-xs ${statusColor[user.status]}`}>
-                  {user.status === "not_active"
-                    ? "Not Active"
-                    : user.status === "active"
-                    ? "Active"
-                    : "Pending"}
+                <Badge className={`text-xs font-semibold ${unified.badgeClassName}`}>
+                  {unified.label}
                 </Badge>
               </div>
+              <p className="text-[11px] text-muted-foreground mt-1 max-w-xs">{unified.accessNote}</p>
             </div>
           </div>
+
+          {lifecycle?.lifecycle && (
+            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs space-y-1.5">
+              <p className="font-semibold text-foreground">Automated inactivity monitoring</p>
+              <p>
+                Unified status: <span className="font-medium">{unified.label}</span>
+                {lifecycle.monthsSinceActivity != null
+                  ? ` · ${lifecycle.monthsSinceActivity} mo. since idle basis`
+                  : ""}
+              </p>
+              {lifecycle.inactivityWarningStage != null && lifecycle.inactivityWarningStage > 0 && (
+                <p className="text-amber-800">
+                  Warning emails sent through stage {lifecycle.inactivityWarningStage} mo.
+                  {lifecycle.nextMilestoneMonths != null
+                    ? ` · Next: ${lifecycle.nextMilestoneMonths} mo.`
+                    : ""}
+                </p>
+              )}
+              {lifecycle.reactivationRequestStatus && (
+                <p>
+                  Reactivation request:{" "}
+                  <strong className="capitalize">{lifecycle.reactivationRequestStatus}</strong>
+                </p>
+              )}
+              {lifecycle.deactivation?.reason && (
+                <p className="text-muted-foreground">
+                  Deactivation reason: {lifecycle.deactivation.reason}
+                </p>
+              )}
+              {lifecycle.lastActiveAt && (
+                <p className="text-muted-foreground">
+                  Idle basis: {new Date(lifecycle.lastActiveAt).toLocaleDateString()}
+                  {lifecycle.activityBasis === "updatedAt" ? " (profile last updated)" : ""}
+                  {lifecycle.activityBasis === "createdAtFallback" ? " (join date estimate)" : ""}
+                </p>
+              )}
+              {lifecycle.inactivityTracked &&
+                lifecycle.automatedMonthsSinceActivity != null && (
+                <p className="text-muted-foreground">
+                  Automation clock (qualifying activity): {lifecycle.automatedMonthsSinceActivity} mo.
+                  {lifecycle.qualifyingLastActiveAt
+                    ? ` · last ping ${new Date(lifecycle.qualifyingLastActiveAt).toLocaleDateString()}`
+                    : ""}
+                </p>
+              )}
+              {!lifecycle.inactivityTracked && user.status !== "not_active" && (
+                <p className="text-muted-foreground">
+                  Not enrolled in automation until the user completes a qualifying sign-in.
+                </p>
+              )}
+              {lifecycle.eligibleForAutoDeactivation && user.status !== "not_active" && (
+                <p className="text-amber-800 font-medium">
+                  Eligible for automated deactivation on the next daily inactivity job (6+ months on
+                  the policy idle basis above; a recent login alone does not reset this clock).
+                </p>
+              )}
+            </div>
+          )}
 
           <AIVerificationPanel verification={user.verification} />
 
@@ -177,7 +302,7 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
 
             <div className="flex items-center gap-2 text-muted-foreground">
               <Calendar className="w-4 h-4" />
-              <span>Joined {UTC_Converter(user.createdAt)}</span>
+              <span>Joined {formatJoinedDate(user.createdAt)}</span>
             </div>
 
             {user.role === "worker" && user.jobTitle && (
@@ -218,7 +343,7 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
                       size="sm"
                       variant="outline"
                       onClick={() =>
-                        window.open(`http://localhost:8920/uploads/resumes/${user.resume}`, "_blank")
+                        window.open(adminAssetUrl(`/uploads/resumes/${user.resume}`), "_blank")
                       }
                     >
                       View Resume
@@ -259,7 +384,7 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      window.open(`http://localhost:8920/uploads/permits/${user.permit}`, "_blank")
+                      window.open(adminAssetUrl(`/uploads/permits/${user.permit}`), "_blank")
                     }
                   >
                     View Permit
@@ -276,13 +401,13 @@ const UserProfileModal = ({ user, open, onOpenChange }: UserProfileModalProps) =
           {/* Actions: accounts are approved automatically by AI at sign-up, so the admin
               only moderates (re-activate a deactivated account, deactivate, delete). */}
           <div className="flex gap-2 pt-2">
-            {user.status === "not_active" && (
+            {(user.status === "not_active" || user.status === "pending") && (
               <Button
                 size="sm"
                 className="flex-1"
                 onClick={() => UpdateWorkerEmployer(user._id, "active", user.role)}
               >
-                Activate
+                {user.status === "not_active" ? "Reactivate account" : "Activate"}
               </Button>
             )}
 

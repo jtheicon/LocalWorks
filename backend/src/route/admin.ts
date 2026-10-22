@@ -1,5 +1,14 @@
 import { TotalWorkers, PendingWorkers, VerifiedWorkers, DeclinedWorkers, NewSkillController, UpdateJobStatus, WorkersEmployers, Dashboard, ViewJobsNew, AddNewIndustry, Profiles, UpdateWorkersEmployersInformation, DeleteWorkerEmployer, Reports, Applications, AdminNotifications, MarkAsReadAdmin, markNotificationsAsRead, deleteAdminNotifSchema, Profile, WorkerVerification, UpdateReportStatus, UpdatePass } from "../controller/admin";
 import { Analytics, CleanupPreview, RunCleanup } from "../controller/analytics";
+import {
+  AdminListUsersLifecycle,
+  AdminGetUserLifecycle,
+  AdminListReactivationRequests,
+  AdminApproveReactivation,
+  AdminRejectReactivation,
+  AdminManualReactivate,
+  AdminRunInactivityJob,
+} from "../controller/accountLifecycle";
 import { Router } from "express";
 import authorized from "../middleware/authorized";
 import { admin } from "../middleware/roles";
@@ -11,6 +20,13 @@ router.get("/dashboard", authorized, admin, Dashboard)
 router.get("/analytics", authorized, admin, Analytics)
 router.get("/cleanup/preview", authorized, admin, CleanupPreview)
 router.post("/cleanup/run", authorized, admin, RunCleanup)
+router.get("/users/lifecycle", authorized, admin, AdminListUsersLifecycle)
+router.get("/users/lifecycle/:role/:userId", authorized, admin, AdminGetUserLifecycle)
+router.get("/reactivation/requests", authorized, admin, AdminListReactivationRequests)
+router.post("/reactivation/approve", authorized, admin, AdminApproveReactivation)
+router.post("/reactivation/reject", authorized, admin, AdminRejectReactivation)
+router.post("/reactivation/manual", authorized, admin, AdminManualReactivate)
+router.post("/inactivity/run", authorized, admin, AdminRunInactivityJob)
 router.get("/profiles/:role", authorized, admin, Profiles)
 router.get("/workers", authorized, admin, TotalWorkers)
 router.get("/workers/pending", authorized, admin, PendingWorkers)

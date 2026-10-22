@@ -32,7 +32,19 @@ const connectDB = async () => {
 export default connectDB
 ```
 
-## Seeding dashboard job counts
+## Database seed scripts
+
+All seeds live under `src/scripts/`. Run **`npm run seed`** from `backend/` to print this list with preview/apply commands. Nothing was removed—each script is separate and idempotent.
+
+| npm command | Script | Purpose |
+|-------------|--------|---------|
+| `seed:jobs` | `seedJobs.ts` | Three demo jobs (PENDING / ACCEPTED / DECLINED) for one **existing** employer |
+| `seed:demo` | `seedDemo.ts` | Full presentation dataset (users, jobs, apps, messages, reports, ratings) |
+| `seed:inactivity` | `seedInactivityDemo.ts` | Account inactivity / reactivation demo accounts |
+
+Shared safety env for writes: `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`. Demo logins also need `SEED_DEMO_PASSWORD` (min 8 chars) for `seed:demo` and `seed:inactivity`.
+
+### `seed:jobs` — dashboard job counts
 
 The job seed adds three clearly labeled demo jobs for one existing, eligible employer:
 one `PENDING`, one `ACCEPTED`, and one `DECLINED`. It does not create an employer,
@@ -57,6 +69,14 @@ npm run seed:jobs -- --apply
 
 The seeded records are real production job documents and may appear in the product.
 Review the preview and confirm the database target before applying.
+
+### `seed:demo` — full demo dataset
+
+Preview (no writes): `npm run seed:demo`. Apply: `npm run seed:demo -- --apply`. Remove demo docs only: `npm run seed:demo -- --reset`.
+
+### `seed:inactivity` — inactivity policy demo
+
+Preview: `npm run seed:inactivity`. Apply: `npm run seed:inactivity -- --apply`. Reset: `npm run seed:inactivity -- --reset`. Optional: `--apply --run-job` runs the inactivity monitor once after seeding. Requires a **Construction** industry (created by `seed:demo` or on first server start).
 
 ## Cross-origin authentication
 

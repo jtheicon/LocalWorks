@@ -2,29 +2,33 @@ import { Credibility } from "../controller/credibility";
 import { Router } from "express";
 import { Dashboard, UploadWorkerProfilePhoto, IsUserLogged, LogOut, MarkContactAsRead, viewPostedJobs, getCityProvinceList, viewJobOverview, AddLocation, AddTag, createJob, UpdateJob, viewJobs, newApplication, viewApplications, WithdrawApplication, viewApplicationsEmployer, UpdateApp, UpdateInterview, CompanyDetails, ViewWorkers, IsApplied, Locations, ViewProfileController, UpdateWorker, UpdateEmployer, EmployerProfileController, ReviewUpload, PostContact, OpenPositionsTotalApplications, GetIndustries, UploadEmployerProfilePhoto, ViewContacts, ViewMessage, NewMessage, ViewContactsEmployer, UserNotifications, MarkAsRead, DeleteNotification, MarkAllAsRead, NewReport, GetReports, UpdateReport, DeleteReport, NewWorkerAssignment, WorkerAssignments, UploadWorkerJob, UploadWorkerJobFile, UpdateWorkerJob, SubmittedFiles, SubmittedJobs, SubmittedJobsById, CompletedAssignments, NewWorkerJob, DeleteWorkerJob, DeleteWorkerJobFile, GetReportDetails, ReportEvidence, SubmitReason, ViewEmployerResponses, SubmitEvidenceUpdateController, DeleteReportX, DeleteReports } from "../controller/protected";
 import authorized from "../middleware/authorized";
+import { enforceActiveAccount } from "../middleware/enforceActiveAccount";
+import { trackQualifyingActivityOnSuccess } from "../middleware/qualifyingActivity";
 import { employers, worker, admin } from "../middleware/roles";
 import { uploadProfilePhoto, uploadFiles, uploadEmployerPermit } from "../file/upload";
 
 const router = Router()
 
+router.use(authorized, enforceActiveAccount, trackQualifyingActivityOnSuccess);
+
 // GET Requests [Global]:
-router.get("/dashboard", authorized, Dashboard)
-router.get("/isWorkerLogged", authorized, worker, IsUserLogged)
-router.get("/isEmployerLogged", authorized, employers, IsUserLogged)
-router.get("/isAdminLogged", authorized, admin, IsUserLogged)
-router.get("/Location", authorized, employers, getCityProvinceList);
-router.get("/notifications", authorized, UserNotifications)
-router.get("/message/:_id", authorized, ViewMessage)
-router.get("/worker-assignments", authorized, WorkerAssignments)
+router.get("/dashboard", Dashboard)
+router.get("/isWorkerLogged", worker, IsUserLogged)
+router.get("/isEmployerLogged", employers, IsUserLogged)
+router.get("/isAdminLogged", admin, IsUserLogged)
+router.get("/Location", employers, getCityProvinceList);
+router.get("/notifications", UserNotifications)
+router.get("/message/:_id", ViewMessage)
+router.get("/worker-assignments", WorkerAssignments)
 
 // GET [Worker & Employer]:
-router.get("/notifications", authorized, UserNotifications)
-router.get("/reports", authorized, GetReports)
-router.get("/report/:_id", authorized, GetReportDetails)
+router.get("/notifications", UserNotifications)
+router.get("/reports", GetReports)
+router.get("/report/:_id", GetReportDetails)
 
 // PATCH [Global]:
-router.patch("/markAsRead/:_id", authorized, MarkAsRead)
-router.patch("/markAllAsRead", authorized, MarkAllAsRead)
+router.patch("/markAsRead/:_id", MarkAsRead)
+router.patch("/markAllAsRead", MarkAllAsRead)
 router.patch(
   "/contacts/:contactId/read",
   authorized,
@@ -32,77 +36,77 @@ router.patch(
 );
 
 // DELETE [Global]:
-router.delete("/deleteNotif/:_id", authorized, DeleteNotification)
+router.delete("/deleteNotif/:_id", DeleteNotification)
 
 // POST Request [Worker & Employer]:
-router.post("/message/:contact", authorized, NewMessage)
+router.post("/message/:contact", NewMessage)
 
 // PATCH [Worker & Employer]:
-router.patch("/update/worker/job/worker", authorized, worker, UpdateWorkerJob)
-router.patch("/update/worker/job/employer", authorized, employers, UpdateWorkerJob)
+router.patch("/update/worker/job/worker", worker, UpdateWorkerJob)
+router.patch("/update/worker/job/employer", employers, UpdateWorkerJob)
 
 // GET Requests [Workers]:
-router.get("/viewJobs", authorized, worker, viewJobs)
-router.get("/isApplied/:job", authorized, worker, IsApplied)
-router.get("/worker/profile", authorized, worker, ViewProfileController)
-router.get("/contacts", authorized, worker, ViewContacts)
+router.get("/viewJobs", worker, viewJobs)
+router.get("/isApplied/:job", worker, IsApplied)
+router.get("/worker/profile", worker, ViewProfileController)
+router.get("/contacts", worker, ViewContacts)
 
-router.get("/jobs/submitted/:_id", authorized, worker, SubmittedFiles)
-router.get("/responses/:applicationId", authorized, ViewEmployerResponses)
+router.get("/jobs/submitted/:_id", worker, SubmittedFiles)
+router.get("/responses/:applicationId", ViewEmployerResponses)
 
 
 // GET Requests [Employers]:
-router.get("/viewPostedJobs", authorized, employers, viewPostedJobs)
-router.get("/viewJobOverview", authorized, employers, viewJobOverview)
+router.get("/viewPostedJobs", employers, viewPostedJobs)
+router.get("/viewJobOverview", employers, viewJobOverview)
 
-router.get("/viewApplications", authorized, worker, viewApplications)
-router.get("/viewApplications/employer", authorized, employers, viewApplicationsEmployer)
+router.get("/viewApplications", worker, viewApplications)
+router.get("/viewApplications/employer", employers, viewApplicationsEmployer)
 
-router.get("/company", authorized, employers, CompanyDetails)
-router.get("/viewWorkers", authorized, employers, ViewWorkers)
+router.get("/company", employers, CompanyDetails)
+router.get("/viewWorkers", employers, ViewWorkers)
 
 // Credibility scores (any signed-in user; admins included)
-router.post("/credibility", authorized, Credibility)
+router.post("/credibility", Credibility)
 
-router.get("/Locations", authorized, employers, Locations)
-router.get("/employer/information", authorized, employers, EmployerProfileController)
-router.get("/openPositions/totalApplications", authorized, employers, OpenPositionsTotalApplications)
+router.get("/Locations", employers, Locations)
+router.get("/employer/information", employers, EmployerProfileController)
+router.get("/openPositions/totalApplications", employers, OpenPositionsTotalApplications)
 
-router.get("/Industries", authorized, employers, GetIndustries)
-router.get("/employer/contacts", authorized, employers, ViewContactsEmployer)
+router.get("/Industries", employers, GetIndustries)
+router.get("/employer/contacts", employers, ViewContactsEmployer)
 
-router.get("/submitted/worker/assignments", authorized, employers, SubmittedJobs)
-router.get("/completed", authorized, employers, CompletedAssignments)
+router.get("/submitted/worker/assignments", employers, SubmittedJobs)
+router.get("/completed", employers, CompletedAssignments)
 
-router.get("/worker/assignment/:workerId/:employerId/:workerAssignment", authorized, employers, SubmittedJobsById)
+router.get("/worker/assignment/:workerId/:employerId/:workerAssignment", employers, SubmittedJobsById)
 
 
 // // POST Requests [Workers]:
-router.post("/createApplication", authorized, worker, newApplication)
-router.post("/rating", authorized, worker, ReviewUpload)
-router.post("/report/worker", authorized, worker, NewReport)
-router.post("/report/employer", authorized, employers, NewReport)
+router.post("/createApplication", worker, newApplication)
+router.post("/rating", worker, ReviewUpload)
+router.post("/report/worker", worker, NewReport)
+router.post("/report/employer", employers, NewReport)
 
-router.post("/upload/worker/job/:employerId", authorized, worker, UploadWorkerJob)
-router.post("/upload/worker/jobFile", authorized, worker, UploadWorkerJobFile)
-router.post("/new/worker/job", authorized, worker, NewWorkerJob)
+router.post("/upload/worker/job/:employerId", worker, UploadWorkerJob)
+router.post("/upload/worker/jobFile", worker, UploadWorkerJobFile)
+router.post("/new/worker/job", worker, NewWorkerJob)
 
 // // POST Requests [Employers]:
-router.post("/createJob", authorized, employers, createJob)
-router.post("/addLocation", authorized, employers, AddLocation)
+router.post("/createJob", employers, createJob)
+router.post("/addLocation", employers, AddLocation)
 
-router.post("/addTag", authorized, employers, AddTag)
-router.post("/contact", authorized, employers, PostContact)
+router.post("/addTag", employers, AddTag)
+router.post("/contact", employers, PostContact)
 
-router.post("/worker/assignment", authorized, employers, NewWorkerAssignment)
+router.post("/worker/assignment", employers, NewWorkerAssignment)
 
 // POST Requests [Workers & Employers]:
-router.post("/report/submit/evidence", authorized, ReportEvidence)
-router.post("/application/reason", authorized, SubmitReason)
+router.post("/report/submit/evidence", ReportEvidence)
+router.post("/application/reason", SubmitReason)
 
 
 // PUT [Workers]:
-router.put("/withdrawApplication", authorized, worker, WithdrawApplication)
+router.put("/withdrawApplication", worker, WithdrawApplication)
 
 router.put(
   "/worker/updateProfile",
@@ -130,9 +134,9 @@ router.put(
 );
 
 // PUT [Employers]:
-router.put("/job/:_id", authorized, employers, UpdateJob)
-router.put("/date", authorized, employers, UpdateInterview)
-router.put("/update/application", authorized, employers, UpdateApp)
+router.put("/job/:_id", employers, UpdateJob)
+router.put("/date", employers, UpdateInterview)
+router.put("/update/application", employers, UpdateApp)
 router.put(
   "/update/employer",
   uploadEmployerPermit.fields([
@@ -145,21 +149,21 @@ router.put(
 );
 
 // PUT [Workers & Employers]:
-router.put("/report", authorized, UpdateReport)
-router.put("/update/evidences", authorized, SubmitEvidenceUpdateController)
+router.put("/report", UpdateReport)
+router.put("/update/evidences", SubmitEvidenceUpdateController)
 
 // DELETE [Workers]:
-router.delete("/worker/job/file/:_id", authorized, worker, DeleteWorkerJobFile)
-router.delete("/worker/job/:name/:_id", authorized, worker, DeleteWorkerJob)
+router.delete("/worker/job/file/:_id", worker, DeleteWorkerJobFile)
+router.delete("/worker/job/:name/:_id", worker, DeleteWorkerJob)
 
 // DELETE [Worker & Employer]:
-router.delete("/delete/report/:_id", authorized, DeleteReport)
-router.delete("/delete/reports", authorized, DeleteReports)
+router.delete("/delete/report/:_id", DeleteReport)
+router.delete("/delete/reports", DeleteReports)
 
 // DELETE [Worker & Employer]:
-router.delete("/delete/report/x/:reportId/:fileName/:fileID", authorized, DeleteReportX)
+router.delete("/delete/report/x/:reportId/:fileName/:fileID", DeleteReportX)
 
 // LogOut Controller:
-router.post("/logout", authorized, LogOut)
+router.post("/logout", LogOut)
 
 export default router

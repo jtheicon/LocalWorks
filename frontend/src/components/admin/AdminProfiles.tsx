@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import UserProfileModal from "./UserProfileModal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
+import { ADMIN_ORIGIN, adminAssetUrl, adminQueryKeys, invalidateAdminLifecycleData } from "@/lib/adminConnect";
+import { resolveAdminUserStatus } from "@/lib/adminUserStatus";
 
 axios.defaults.withCredentials = true;
 
@@ -20,43 +22,72 @@ const AdminProfiles = () => {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
-  const [sortStatus, setSortStatus] = useState<"all" | "active" | "not_active" | "pending">("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState<"all" | "active" | "inactive" | "deactivated" | "pending">("all");
   const [roleFilter, setRoleFilter] = useState<"all" | "worker" | "employer">("all");
+  const [page, setPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [selectedLifecycle, setSelectedLifecycle] = useState<Record<string, unknown> | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const AdminProfilesInfo = async () => {
-    const result = await axios.get("http://localhost:8920/api/admin/profiles/all", {
+  const fetchLifecycle = async () => {
+    const result = await axios.get(`${ADMIN_ORIGIN}/api/admin/users/lifecycle`, {
       withCredentials: true,
+      params: {
+        lifecycle: lifecycleFilter,
+        role: roleFilter,
+        search: search.trim() || undefined,
+        page,
+        limit: 24,
+      },
     });
     return result.data;
   };
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["AdminProfilesInfo"],
-    queryFn: AdminProfilesInfo,
-  });
-
-  if (isLoading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-
-  const { Users } = data;
-
-  const filtered = Users.filter((u: UserProfile) => {
-    const matchesSearch = u.email.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = sortStatus === "all" || u.status === sortStatus;
-    const matchesRole = roleFilter === "all" || u.role === roleFilter;
-    return matchesSearch && matchesStatus && matchesRole;
-  });
-
-  const statusLabel = (status: UserProfile["status"]) => {
-    if (status === "active") return { text: "ACTIVE", className: "text-green-600" };
-    if (status === "not_active") return { text: "NOT ACTIVE", className: "text-destructive" };
-    return { text: "PENDING", className: "text-yellow-600" };
+  const fetchProfiles = async () => {
+    const result = await axios.get(`${ADMIN_ORIGIN}/api/admin/profiles/all`, { withCredentials: true });
+    return result.data.Users as UserProfile[];
   };
 
-  const returnLocation = (locName) => {
-    let locationName = ""
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: [...adminQueryKeys.lifecycle, lifecycleFilter, roleFilter, search, page],
+    queryFn: fetchLifecycle,
+  });
+
+  useEffect(() => {
+    if (!selectedUser?._id || !data?.users) return;
+    const fresh = data.users.find(
+      (u: { _id: string }) => String(u._id) === String(selectedUser._id),
+    );
+    if (fresh) setSelectedLifecycle(fresh);
+  }, [data?.users, selectedUser?._id]);
+
+  const { data: profileRows } = useQuery({
+    queryKey: adminQueryKeys.profiles,
+    queryFn: fetchProfiles,
+  });
+
+  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Loading users…</div>;
+  if (error) {
+    return (
+      <div className="p-6 space-y-2">
+        <p className="text-destructive text-sm">Error: {(error as Error).message}</p>
+        <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
+      </div>
+    );
+  }
+
+  const lifecycleUsers = data?.users ?? [];
+  const pagination = data?.pagination;
+
+  const profileById = new Map(
+    (profileRows ?? []).map((u: UserProfile) => [String(u._id ?? u.id), u]),
+  );
+
+  const deactivationMonths = data?.policy?.deactivationMonths ?? 6;
+
+  const returnLocation = (locName?: string | null) => {
+    if (!locName || typeof locName !== "string") return "—";
+    let locationName = "";
 
     for (let loc = 0; loc < locName.length; loc++) {
       if (loc < 25) {
@@ -72,10 +103,17 @@ const AdminProfiles = () => {
 
   return (
     <>
-      <main className="flex-1 p-6 space-y-6 overflow-auto">
-        <div>
-          <h2 className="text-xl font-bold text-foreground">User</h2>
-          <p className="text-sm text-muted-foreground">Manage users here</p>
+      <main className="p-6 space-y-6">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-bold text-foreground">User management</h2>
+            <p className="text-sm text-muted-foreground">
+              Inactivity status (3/4/5/6‑month emails, deactivation, reactivation) updates live via WebSocket when the job runs or accounts change.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching}>
+            {isFetching ? "Refreshing…" : "Refresh now"}
+          </Button>
         </div>
 
         {/* Search & Filters */}
@@ -95,7 +133,13 @@ const AdminProfiles = () => {
               <div className="flex gap-3 items-center ml-auto">
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">Role:</span>
-                  <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as any)}>
+                  <Select
+                    value={roleFilter}
+                    onValueChange={(v) => {
+                      setRoleFilter(v as typeof roleFilter);
+                      setPage(1);
+                    }}
+                  >
                     <SelectTrigger className="w-28 h-9">
                       <SelectValue />
                     </SelectTrigger>
@@ -108,15 +152,22 @@ const AdminProfiles = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Sort:</span>
-                  <Select value={sortStatus} onValueChange={(v) => setSortStatus(v as any)}>
-                    <SelectTrigger className="w-28 h-9">
+                  <span className="text-sm text-muted-foreground">Status:</span>
+                  <Select
+                    value={lifecycleFilter}
+                    onValueChange={(v) => {
+                      setLifecycleFilter(v as typeof lifecycleFilter);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-36 h-9">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="all">All users</SelectItem>
                       <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="not_active">Not Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="deactivated">Deactivated</SelectItem>
                       <SelectItem value="pending">Pending</SelectItem>
                     </SelectContent>
                   </Select>
@@ -127,17 +178,36 @@ const AdminProfiles = () => {
         </Card>
 
         {/* User Cards Grid */}
-        {filtered.length === 0 ? (
+        {isFetching && (
+          <p className="text-xs text-muted-foreground">Refreshing…</p>
+        )}
+        {lifecycleUsers.length === 0 ? (
           <div className="text-center text-muted-foreground py-12 text-sm">
-            No users match your search
+            No users match your filters
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((user: UserProfile) => {
-              const status = statusLabel(user.status);
+            {lifecycleUsers.map((row: any) => {
+              const user = profileById.get(row._id) ?? ({
+                _id: row._id,
+                id: row._id,
+                email: row.email,
+                role: row.role,
+                status: row.status,
+                name: row.name,
+              } as UserProfile);
+              const badge = resolveAdminUserStatus(
+                {
+                  status: row.status,
+                  lifecycle: row.lifecycle,
+                  monthsSinceActivity: row.monthsSinceActivity,
+                  reactivationRequestStatus: row.reactivationRequestStatus,
+                },
+                deactivationMonths,
+              );
 
               return (
-                <Card key={user.id} className="border-none shadow-sm hover:shadow-md transition-shadow">
+                <Card key={row._id} className="border-none shadow-sm hover:shadow-md transition-shadow">
                   <CardContent className="p-4 space-y-3">
 
                     {/* Header */}
@@ -156,7 +226,7 @@ const AdminProfiles = () => {
                             }}
                           >
                             <img
-                              src={`http://localhost:8920${user.photo}`}
+                              src={adminAssetUrl(user.photo)}
                               alt="User avatar"
                               style={{
                                 position: "absolute",
@@ -173,16 +243,81 @@ const AdminProfiles = () => {
                       </div>
                       <div className="min-w-0">
                         <p className="font-semibold text-sm text-foreground truncate">
-                          {user.email}
+                          {user.name || row.name || user.email}
                         </p>
                         <p className="text-xs text-muted-foreground truncate">
-                          {user.skill || user.company}
+                          {user.email}
+                          {(user.skill || user.company) ? ` · ${user.skill || user.company}` : ""}
                         </p>
                       </div>
                     </div>
 
-                    {/* Info (UNCHANGED) */}
                     <div className="space-y-1.5 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>
+                          Inactivity basis:{" "}
+                          {row.lastActiveAt
+                            ? new Date(row.lastActiveAt).toLocaleDateString()
+                            : "Not tracked yet"}
+                          {row.activityBasis === "updatedAt" ? " (profile update)" : ""}
+                          {row.activityBasis === "createdAtFallback" ? " (join date est.)" : ""}
+                        </span>
+                      </div>
+                      {row.lastQualifyingActivityAt &&
+                        new Date(row.lastQualifyingActivityAt).getTime() !==
+                          new Date(row.lastActiveAt).getTime() && (
+                        <div className="flex items-center gap-2 text-[11px]">
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>
+                            Last qualifying ping:{" "}
+                            {new Date(row.lastQualifyingActivityAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                      {row.monthsSinceRegistration != null && (
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>Member {row.monthsSinceRegistration} mo.</span>
+                        </div>
+                      )}
+                      {row.monthsSinceActivity != null && (
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>{row.monthsSinceActivity} mo. since inactivity basis</span>
+                        </div>
+                      )}
+                      {row.inactivityWarningStage > 0 && row.status !== "not_active" && (
+                        <div className="text-xs text-amber-800">
+                          Inactivity email stage: {row.inactivityWarningStage} mo.
+                          {row.nextMilestoneMonths != null
+                            ? ` · Next milestone: ${row.nextMilestoneMonths} mo.`
+                            : ""}
+                        </div>
+                      )}
+                      {row.automatedMonthsSinceActivity != null && row.inactivityTracked && (
+                        <div className="flex items-center gap-2 text-[11px]">
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>
+                            Automation clock: {row.automatedMonthsSinceActivity} mo. since qualifying activity
+                          </span>
+                        </div>
+                      )}
+                      {!row.inactivityTracked && row.status !== "not_active" && (
+                        <div className="text-xs text-muted-foreground">
+                          Not on automation until first qualifying sign-in
+                        </div>
+                      )}
+                      {row.eligibleForAutoDeactivation && row.lifecycle !== "deactivated" && (
+                        <div className="text-xs text-amber-800 font-medium">
+                          Due for automated deactivation (6+ mo on policy idle basis; daily job)
+                        </div>
+                      )}
+                      {row.reactivationRequestStatus && (
+                        <div className="text-xs">
+                          Reactivation: <strong>{row.reactivationRequestStatus}</strong>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <Phone className="w-3.5 h-3.5" />
                         <span>{user.phoneNumber || user.phone}</span>
@@ -199,8 +334,8 @@ const AdminProfiles = () => {
 
                     {/* Footer */}
                     <div className="flex items-center justify-between pt-2 border-t border-border">
-                      <span className={`text-xs font-bold ${status.className}`}>
-                        {status.text}
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${badge.badgeClassName}`}>
+                        {badge.label}
                       </span>
 
                       <div className="flex items-center gap-1">
@@ -210,6 +345,7 @@ const AdminProfiles = () => {
                           className="h-8 w-8"
                           onClick={() => {
                             setSelectedUser(user);
+                            setSelectedLifecycle(row);
                             setModalOpen(true);
                           }}
                         >
@@ -222,7 +358,7 @@ const AdminProfiles = () => {
                           className="h-8 w-8 text-destructive"
                           onClick={async () => {
                             await axios.put(
-                              "http://localhost:8920/api/admin/deleteUser",
+                              `${ADMIN_ORIGIN}/api/admin/deleteUser`,
                               {
                                 _id: user._id,
                                 status: "deleted",
@@ -233,9 +369,7 @@ const AdminProfiles = () => {
 
                             toast.success("User removed");
 
-                            await queryClient.invalidateQueries({
-                              queryKey: ["AdminProfilesInfo"],
-                            });
+                            invalidateAdminLifecycleData(queryClient);
                           }}
                         >
                           <Trash2 className="w-4 h-4" />
@@ -249,19 +383,45 @@ const AdminProfiles = () => {
             })}
           </div>
         )}
+        {pagination && pagination.pages > 1 && (
+          <div className="flex justify-center gap-2 pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground self-center">
+              Page {pagination.page} of {pagination.pages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= pagination.pages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        )}
       </main>
 
       {/* Modal */}
       {selectedUser && (
         <UserProfileModal
           user={selectedUser}
+          lifecycle={selectedLifecycle ?? undefined}
           open={modalOpen}
           onOpenChange={setModalOpen}
           onUpdateStatus={async () => {
-            await queryClient.invalidateQueries({ queryKey: ["AdminProfilesInfo"] });
+            await queryClient.invalidateQueries({ queryKey: adminQueryKeys.profiles });
+            invalidateAdminLifecycleData(queryClient);
           }}
           onDelete={async () => {
-            await queryClient.invalidateQueries({ queryKey: ["AdminProfilesInfo"] });
+            await queryClient.invalidateQueries({ queryKey: adminQueryKeys.profiles });
+            invalidateAdminLifecycleData(queryClient);
           }}
         />
       )}
