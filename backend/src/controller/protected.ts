@@ -31,7 +31,7 @@ import { ResponseModel } from "../model/Response";
 import Report from "../model/Report";
 import VerifiedWorker from "../model/VerifiedWorker";
 import ReportWorker from "../model/ReportWorker";
-import { matchJobsForWorker } from "../services/jobMatching";
+import { matchJobsForWorker, matchWorkersForJob } from "../services/jobMatching";
 import { RECOMMENDED_SCORE } from "../matching/skillScore";
 import WorkerAssignment from "../model/WorkerAssignment";
 import fs from "fs";
@@ -3118,6 +3118,61 @@ export const ViewWorkers = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true, workers,
+    });
+  } catch (error) {
+    mainError(error, res);
+  }
+};
+
+// Recommended Workers for one of the employer's open jobs (AI-assisted skill match):
+export const RecommendedWorkers = async (req: Request, res: Response) => {
+  const { jobId } = req.params;
+  if (!Types.ObjectId.isValid(String(jobId))) return res.status(400).json({ success: false, message: "Invalid job" });
+
+  try {
+    const job = await Job.findOne({ _id: jobId, posted: req.user.id, status: "ACCEPTED" }).select("title category tags");
+    if (!job) return res.status(404).json({ success: false, message: "Open job not found" });
+
+    // A job without tags is matched on its category and title instead.
+    const jobSkills = job.tags?.length ? job.tags : [job.category, job.title].filter(Boolean) as string[];
+
+    const workers = await Worker.find({ status: "active" })
+      .select("name photo resume jobTitle location yearsOfExperience availability skills skill rating")
+      .lean();
+
+    // The skill category counts as a skill, as in viewJobs:
+    const { ai, matches } = await matchWorkersForJob(
+      jobSkills,
+      workers.map((w) => ({ id: String(w._id), skills: [...(w.skills || []), ...(w.skill ? [w.skill] : [])] }))
+    );
+
+    const [verified, applications] = await Promise.all([
+      VerifiedWorker.find({ worker: { $in: workers.map((w) => w._id) } }).select("worker"),
+      Application.find({ job: job._id }).select("worker status"),
+    ]);
+    const verifiedIds = new Set(verified.map((v) => String(v.worker)));
+    const applicationStatus = new Map(applications.map((a) => [String(a.worker), a.status]));
+
+    const recommended = workers
+      .map((w) => ({
+        ...w,
+        isVerified: verifiedIds.has(String(w._id)),
+        applicationStatus: applicationStatus.get(String(w._id)) ?? null,
+        match: matches.get(String(w._id))!,
+      }))
+      .filter((w) => (w.match.score ?? 0) > 0)
+      .sort((a, b) =>
+        (b.match.score ?? 0) - (a.match.score ?? 0) ||
+        Number(b.isVerified) - Number(a.isVerified) ||
+        Number(b.rating || 0) - Number(a.rating || 0)
+      )
+      .slice(0, 50);
+
+    return res.status(200).json({
+      success: true,
+      job: { _id: job._id, title: job.title, skills: jobSkills },
+      workers: recommended,
+      matching: { ai, recommendedScore: RECOMMENDED_SCORE },
     });
   } catch (error) {
     mainError(error, res);

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import EmployerSidebar from "@/components/employer/EmployerSidebar";
 import EmployerHeader from "@/components/employer/EmployerHeader";
-import CompanyProfile from "@/components/employer/CompanyProfile";
+import EmployerOverview from "@/components/employer/EmployerOverview";
 import WorkerApplications from "@/components/employer/WorkerApplications";
 import BrowseWorkers from "@/components/employer/BrowseWorkers";
 import PostJobModal from "@/components/employer/PostJobModal";
@@ -225,22 +225,11 @@ const EmployerDashboard = () => {
   const renderContent = () => {
     if (activeTab === "dashboard") {
       return (
-        <main className="flex-1 p-6 space-y-6 overflow-auto">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-foreground">Dashboard</h2>
-              <p className="text-sm text-muted-foreground">
-                Overview of your company profile. Manage jobs, applications and workers from the sidebar.
-              </p>
-            </div>
-            <Button onClick={() => setPostJobOpen(true)} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Post a Job
-            </Button>
-          </div>
-
-          <CompanyProfile />
-        </main>
+        <EmployerOverview
+          notifications={notifications}
+          onNavigate={setActiveTab}
+          onPostJob={() => setPostJobOpen(true)}
+        />
       );
     }
 

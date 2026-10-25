@@ -1,8 +1,9 @@
 import { lazy, Suspense, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useDashboardPath } from "@/lib/session";
 import logo from "@/assets/logo.avif";
 
 const LoginModal = lazy(() => import("./LoginModal"));
@@ -13,6 +14,8 @@ const Navbar = () => {
   const [loginOpen, setLoginOpen] = useState(false);
   const [signUpOpen, setSignUpOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { data: dashboardPath } = useDashboardPath();
 
   const navLinks = [
     { name: "Home", href: "/" },
@@ -72,12 +75,20 @@ const Navbar = () => {
 
             {/* Desktop CTA Buttons */}
             <div className="hidden md:flex items-center gap-3">
-              <Button variant="ghost" onClick={() => setLoginOpen(true)}>
-                Login
-              </Button>
-              <Button onClick={() => setSignUpOpen(true)}>
-                Sign Up
-              </Button>
+              {dashboardPath ? (
+                <Button onClick={() => navigate(dashboardPath)}>
+                  Go to Dashboard
+                </Button>
+              ) : (
+                <>
+                  <Button variant="ghost" onClick={() => setLoginOpen(true)}>
+                    Login
+                  </Button>
+                  <Button onClick={() => setSignUpOpen(true)}>
+                    Sign Up
+                  </Button>
+                </>
+              )}
             </div>
 
             {/* Mobile Menu Button */}
@@ -111,7 +122,19 @@ const Navbar = () => {
                   </Link>
                 ))}
                 <div className="flex flex-col gap-2 pt-4 border-t border-border">
-                  <Button 
+                  {dashboardPath ? (
+                    <Button
+                      className="justify-start"
+                      onClick={() => {
+                        setIsOpen(false);
+                        navigate(dashboardPath);
+                      }}
+                    >
+                      Go to Dashboard
+                    </Button>
+                  ) : (
+                  <>
+                  <Button
                     variant="ghost" 
                     className="justify-start" 
                     onClick={() => {
@@ -130,6 +153,8 @@ const Navbar = () => {
                   >
                     Sign Up
                   </Button>
+                  </>
+                  )}
                 </div>
               </div>
             </div>

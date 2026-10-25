@@ -84,7 +84,8 @@ const JobListings = () => {
   const recommendedScore = data?.matching?.recommendedScore ?? 50;
   const aiMatching = data?.matching?.ai === "on";
 
-  const enrichedJobs = AllJobs.map((job) => ({
+  // Jobs the worker was already hired for aren't openings for them anymore.
+  const enrichedJobs = AllJobs.filter((job) => !job.Accepted).map((job) => ({
     ...job,
     matchScore: job.match?.score ?? null,
     matchedSkills: job.match?.matched || [],
@@ -139,8 +140,9 @@ const JobListings = () => {
     );
   });
 
+  // Recommendations are for jobs still worth applying to, so applied ones are left out.
   const recommendedJobs = filteredJobs.filter(
-    (job) => (job.matchScore ?? 0) >= recommendedScore
+    (job) => !job.IsApplied && (job.matchScore ?? 0) >= recommendedScore
   );
 
 

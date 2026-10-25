@@ -59,17 +59,16 @@ const judgeAndCache = (jobSkills: string[], workerSkills: string[]) => {
   return pending;
 };
 
-// Scores every job against the worker's skills. Never throws because of the AI.
-export const matchJobsForWorker = async (
-  workerSkills: string[],
-  jobs: { id: string; skills: string[] }[],
-): Promise<{ ai: AiStatus; matches: Map<string, JobMatch> }> => {
-  const worker = uniqueSkills(workerSkills);
+// AI verdicts for every (unresolved job skill, worker skill) pair: cached ones, plus new ones
+// if Gemini answers within AI_WAIT_MS. Never throws because of the AI.
+const aiVerdicts = async (
+  unresolved: string[],
+  worker: string[],
+): Promise<{ ai: AiStatus; verdicts: Map<string, AiLevel> }> => {
   let verdicts = new Map<string, AiLevel>();
   let ai: AiStatus = "off";
 
-  const unresolved = worker.length ? uniqueSkills(jobs.flatMap((j) => unresolvedSkills(j.skills, worker))) : [];
-  if (aiMatchingEnabled() && unresolved.length) {
+  if (aiMatchingEnabled() && unresolved.length && worker.length) {
     const jobKeys = unresolved.map(skillKey);
     const workerKeys = worker.map(skillKey);
     const isJudged = () => jobKeys.every((j) => workerKeys.every((w) => verdicts.has(pairKey(j, w))));
@@ -89,8 +88,37 @@ export const matchJobsForWorker = async (
       ai = "unavailable";
     }
   }
+  return { ai, verdicts };
+};
 
-  const judge = (jobKey: string, workerKey: string) => verdicts.get(pairKey(jobKey, workerKey));
+const judgeFrom = (verdicts: Map<string, AiLevel>) => (jobKey: string, workerKey: string) =>
+  verdicts.get(pairKey(jobKey, workerKey));
+
+// Scores every job against the worker's skills. Never throws because of the AI.
+export const matchJobsForWorker = async (
+  workerSkills: string[],
+  jobs: { id: string; skills: string[] }[],
+): Promise<{ ai: AiStatus; matches: Map<string, JobMatch> }> => {
+  const worker = uniqueSkills(workerSkills);
+  const unresolved = worker.length ? uniqueSkills(jobs.flatMap((j) => unresolvedSkills(j.skills, worker))) : [];
+  const { ai, verdicts } = await aiVerdicts(unresolved, worker);
+
+  const judge = judgeFrom(verdicts);
   const matches = new Map(jobs.map((j) => [j.id, scoreJob(j.skills, worker, judge)]));
+  return { ai, matches };
+};
+
+// Scores every worker against one job's required skills (employer-side recommendations).
+// One Gemini call covers all candidates, since it judges job skills against the union of their skills.
+export const matchWorkersForJob = async (
+  jobSkills: string[],
+  workers: { id: string; skills: string[] }[],
+): Promise<{ ai: AiStatus; matches: Map<string, JobMatch> }> => {
+  const allWorkerSkills = uniqueSkills(workers.flatMap((w) => w.skills));
+  const unresolved = uniqueSkills(workers.flatMap((w) => unresolvedSkills(jobSkills, w.skills)));
+  const { ai, verdicts } = await aiVerdicts(unresolved, allWorkerSkills);
+
+  const judge = judgeFrom(verdicts);
+  const matches = new Map(workers.map((w) => [w.id, scoreJob(jobSkills, w.skills, judge)]));
   return { ai, matches };
 };

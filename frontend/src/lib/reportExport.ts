@@ -145,41 +145,57 @@ async function exportReportPDF(report: SystemReport, filename: string) {
     y += 16;
   }
 
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const gap = 16;
+  const halfWidth = (pageWidth - margin * 2 - gap) / 2;
+
   if (report.summary?.length) {
-    autoTable(doc, {
-      startY: y,
-      head: [["Summary", "Value"]],
-      body: report.summary.map(([label, value]) => [label, String(value)]),
-      theme: "grid",
-      tableWidth: 280,
-      margin: { left: margin },
-      headStyles: { fillColor: BRAND_ORANGE },
-      styles: { fontSize: 9 },
+    // Split across two side-by-side tables so the summary doesn't fill page 1 on its own.
+    const rows = report.summary.map(([label, value]) => [label, String(value)]);
+    const half = Math.ceil(rows.length / 2);
+    let bottom = y;
+    [rows.slice(0, half), rows.slice(half)].forEach((body, col) => {
+      if (!body.length) return;
+      autoTable(doc, {
+        startY: y,
+        head: [["Summary", "Value"]],
+        body,
+        theme: "grid",
+        tableWidth: halfWidth,
+        margin: { left: margin + col * (halfWidth + gap) },
+        headStyles: { fillColor: BRAND_ORANGE },
+        styles: { fontSize: 9, cellPadding: 3 },
+      });
+      bottom = Math.max(bottom, (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY);
     });
-    y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 24;
+    y = bottom + 24;
   }
 
   if (report.charts?.items.length) {
-    doc.addPage();
+    // Two charts per row; rows flow on from the summary and only break when out of space.
+    const chartH = (pageHeight - margin * 2 - 20 - gap) / 2;
+    if (y + 20 + chartH > pageHeight - margin) {
+      doc.addPage();
+      y = margin;
+    }
     doc.setTextColor(40, 40, 40);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text(report.charts.title, margin, margin + 4);
+    doc.text(report.charts.title, margin, y + 4);
     doc.setFont("helvetica", "normal");
+    y += 20;
 
-    // Two charts per row, two rows per page.
-    const gap = 16;
-    const top = margin + 20;
-    const chartW = (pageWidth - margin * 2 - gap) / 2;
-    const chartH = (doc.internal.pageSize.getHeight() - top - margin - gap) / 2;
     report.charts.items.forEach((chart, i) => {
-      if (i > 0 && i % 4 === 0) doc.addPage();
-      const slot = i % 4;
-      drawChart(doc, chart, margin + (slot % 2) * (chartW + gap), top + Math.floor(slot / 2) * (chartH + gap), chartW, chartH);
+      if (i % 2 === 0 && i > 0) {
+        y += chartH + gap;
+        if (y + chartH > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      }
+      drawChart(doc, chart, margin + (i % 2) * (halfWidth + gap), y, halfWidth, chartH);
     });
-
-    doc.addPage();
-    y = margin;
+    y += chartH + 28;
   }
 
   report.sections.forEach((section) => {

@@ -45,7 +45,7 @@ const EmployerSidebar = ({ activeTab, onTabChange, unreadCount = 0 }: EmployerSi
   };
 
   return (
-    <aside className="w-56 min-h-screen bg-sidebar-background border-r border-sidebar-border flex flex-col">
+    <aside className="w-56 h-screen sticky top-0 shrink-0 overflow-y-auto bg-sidebar-background border-r border-sidebar-border flex flex-col">
       {/* Logo */}
       <div className="p-6 flex flex-col items-center gap-2">
         <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center shadow-lg ring-4 ring-primary/20">

@@ -42,7 +42,7 @@ const EmployerProfile = () => {
         {/* Company Profile Section */}
         <div className="mb-8">
 
-        <Button className="mb-9" onClick={() => nav(-1)}>Back to Employer Dashboard</Button>
+        <Button className="mb-9" onClick={() => nav("/employer-dashboard")}>Back to Employer Dashboard</Button>
 
         {/* Tabs for Applications and Browse Workers */}
         <div className="space-y-6">

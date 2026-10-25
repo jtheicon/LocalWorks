@@ -10,7 +10,7 @@
     "seed:jobs": "dotenvx run -- ts-node src/scripts/seedJobs.ts",
     "seed:demo": "dotenvx run -- ts-node src/scripts/seedDemo.ts",
     "seed:inactivity": "dotenvx run -- ts-node src/scripts/seedInactivityDemo.ts",
-    "start": "dotenvx run -- nodemon --watch 'src/**/*.ts'"
+    "start": "dotenvx run -- nodemon --watch src --ext ts"
   },
   "keywords": [],
   "author": "",

@@ -1,6 +1,6 @@
 import { Credibility } from "../controller/credibility";
 import { Router } from "express";
-import { Dashboard, UploadWorkerProfilePhoto, IsUserLogged, LogOut, MarkContactAsRead, viewPostedJobs, getCityProvinceList, viewJobOverview, AddLocation, AddTag, createJob, UpdateJob, viewJobs, newApplication, viewApplications, WithdrawApplication, viewApplicationsEmployer, UpdateApp, UpdateInterview, CompanyDetails, ViewWorkers, IsApplied, Locations, ViewProfileController, UpdateWorker, UpdateEmployer, EmployerProfileController, ReviewUpload, PostContact, OpenPositionsTotalApplications, GetIndustries, UploadEmployerProfilePhoto, ViewContacts, ViewMessage, NewMessage, ViewContactsEmployer, UserNotifications, MarkAsRead, DeleteNotification, MarkAllAsRead, NewReport, GetReports, UpdateReport, DeleteReport, NewWorkerAssignment, WorkerAssignments, UploadWorkerJob, UploadWorkerJobFile, UpdateWorkerJob, SubmittedFiles, SubmittedJobs, SubmittedJobsById, CompletedAssignments, NewWorkerJob, DeleteWorkerJob, DeleteWorkerJobFile, GetReportDetails, ReportEvidence, SubmitReason, ViewEmployerResponses, SubmitEvidenceUpdateController, DeleteReportX, DeleteReports } from "../controller/protected";
+import { Dashboard, UploadWorkerProfilePhoto, IsUserLogged, LogOut, MarkContactAsRead, viewPostedJobs, getCityProvinceList, viewJobOverview, AddLocation, AddTag, createJob, UpdateJob, viewJobs, newApplication, viewApplications, WithdrawApplication, viewApplicationsEmployer, UpdateApp, UpdateInterview, CompanyDetails, ViewWorkers, RecommendedWorkers, IsApplied, Locations, ViewProfileController, UpdateWorker, UpdateEmployer, EmployerProfileController, ReviewUpload, PostContact, OpenPositionsTotalApplications, GetIndustries, UploadEmployerProfilePhoto, ViewContacts, ViewMessage, NewMessage, ViewContactsEmployer, UserNotifications, MarkAsRead, DeleteNotification, MarkAllAsRead, NewReport, GetReports, UpdateReport, DeleteReport, NewWorkerAssignment, WorkerAssignments, UploadWorkerJob, UploadWorkerJobFile, UpdateWorkerJob, SubmittedFiles, SubmittedJobs, SubmittedJobsById, CompletedAssignments, NewWorkerJob, DeleteWorkerJob, DeleteWorkerJobFile, GetReportDetails, ReportEvidence, SubmitReason, ViewEmployerResponses, SubmitEvidenceUpdateController, DeleteReportX, DeleteReports } from "../controller/protected";
 import authorized from "../middleware/authorized";
 import { enforceActiveAccount } from "../middleware/enforceActiveAccount";
 import { trackQualifyingActivityOnSuccess } from "../middleware/qualifyingActivity";
@@ -64,6 +64,7 @@ router.get("/viewApplications/employer", employers, viewApplicationsEmployer)
 
 router.get("/company", employers, CompanyDetails)
 router.get("/viewWorkers", employers, ViewWorkers)
+router.get("/recommendedWorkers/:jobId", employers, RecommendedWorkers)
 
 // Credibility scores (any signed-in user; admins included)
 router.post("/credibility", Credibility)

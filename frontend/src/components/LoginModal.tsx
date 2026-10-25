@@ -71,7 +71,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
     })
       .then(function (response) {
         toast.success(response.data.message)
-        navigate("/worker-dashboard");
+        navigate("/worker-dashboard", { replace: true });
       })
       .catch(function (error: any) {
         if (error.response) {
@@ -94,7 +94,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
     })
       .then(function (response) {
         toast.success(response.data.message)
-        navigate("/employer-dashboard")
+        navigate("/employer-dashboard", { replace: true })
       })
       .catch(function (error: any) {
         if (error.response) {
