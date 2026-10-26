@@ -291,6 +291,15 @@ const run = async () => {
   if (apply && password.length < 8) {
     throw new Error("Set SEED_DEMO_PASSWORD (min 8 characters) for tour worker passwords.");
   }
+  if (apply && mode !== "fixtures-only") {
+    const missingEmailSettings = ["EMAIL_USER", "EMAIL_PASS", "EMAIL_OWNER", "APP_URL"]
+      .filter((name) => !process.env[name]?.trim());
+    if (missingEmailSettings.length > 0) {
+      throw new Error(
+        `Set ${missingEmailSettings.join(", ")} in backend/.env before sending lifecycle emails.`,
+      );
+    }
+  }
 
   await mongoose.connect(process.env.MONGO_URI);
 

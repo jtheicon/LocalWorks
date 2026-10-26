@@ -159,7 +159,7 @@ Use these to **send real SMTP mail** to **`INACTIVITY_LIFECYCLE_INBOX`** (defaul
 
 This is separate from **`seed:inactivity`**, which seeds broader admin/UI demo accounts.
 
-Put in `.env` (or set in the shell): `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `SEED_DEMO_PASSWORD` (min 8 chars), and your usual `EMAIL_*` / `MONGO_URI`.
+Put in `.env` (or set in the shell): `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `SEED_DEMO_PASSWORD` (min 8 chars), `MONGO_URI` for the intended database, `EMAIL_USER`, `EMAIL_PASS` (Gmail App Password), `EMAIL_OWNER`, and `APP_URL`. Email settings and `APP_URL` are required for the 3/4/5/6-month email runs. `INACTIVITY_LIFECYCLE_INBOX` is optional; it selects the delivery address and never selects an account to backdate or delete.
 
 | Goal | Command |
 |------|---------|
@@ -172,6 +172,8 @@ Put in `.env` (or set in the shell): `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_
 | Remove tour workers | `npm run seed:inactivity-email-tour -- --reset` |
 
 Re-running a command is safe: fixtures are reset to the correct idle months/stages before each job (the 6‑month worker is recreated as `active` if you test deletion again).
+
+The commands above mutate only the `lifecycle-*@localworks-inactivity.test` fixtures. The deletion command permanently deletes the 6-month fixture and related platform data; it does not delete the configured email recipient or any account matching that address.
 
 ## Cross-origin authentication
 
