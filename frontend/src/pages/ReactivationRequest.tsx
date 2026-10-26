@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -6,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-const API = import.meta.env.VITE_API_URL ?? "http://localhost:8920";
+const API = import.meta.env.VITE_API_URL ?? API_ORIGIN;
 
 const ReactivationRequest = () => {
   const [params] = useSearchParams();

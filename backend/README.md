@@ -11,8 +11,13 @@
 - Clone this repository via github
 - Install express, and use this command:
 ```npm install```
-- Execute the API using this command:
+- Run the API in development using:
 ```npm start```
+- Build and run the compiled production API using:
+```bash
+npm run build
+npm run start:prod
+```
 
 
 ## MongoDB Connection: ##

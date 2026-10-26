@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -169,12 +170,12 @@ const PostJobModal = ({ open, onOpenChange, job = null }: PostJobModalProps) => 
   /*                             Fetch Locations                                */
   /* -------------------------------------------------------------------------- */
   const fetchLocations = async () => {
-    const { data } = await axios.get("http://localhost:8920/api/pro/Locations", { withCredentials: true });
+    const { data } = await axios.get(`${API_ORIGIN}/api/pro/Locations`, { withCredentials: true });
     return data;
   };
 
   const fetchIndustries = async () => {
-    const { data } = await axios.get("http://localhost:8920/api/pro/Industries");
+    const { data } = await axios.get(`${API_ORIGIN}/api/pro/Industries`);
     return data;
   };
 
@@ -247,8 +248,8 @@ const PostJobModal = ({ open, onOpenChange, job = null }: PostJobModalProps) => 
         };
 
       const { data } = job
-        ? await axios.put(`http://localhost:8920/api/pro/job/${job._id}`, Payload)
-        : await axios.post("http://localhost:8920/api/pro/createJob", Payload);
+        ? await axios.put(`${API_ORIGIN}/api/pro/job/${job._id}`, Payload)
+        : await axios.post(`${API_ORIGIN}/api/pro/createJob`, Payload);
 
       toast.success(data.message, {
         description: job

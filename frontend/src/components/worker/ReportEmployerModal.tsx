@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import axios from "axios";
 
@@ -42,7 +43,7 @@ export const WorkerReportModal = (val: { open: boolean, onOpenChange: (open: boo
   const [submitEvidence, setEvidence] = useState(null)
 
   const handleSubmit = async () => {
-    await axios.put("http://localhost:8920/api/pro/report", {
+    await axios.put(`${API_ORIGIN}/api/pro/report`, {
       reportId: val.reportId,
       reportType: Reason === null ? ReportType === null ? val.reportType : ReportType : Reason,
       description: Description === null ? val.description : Description
@@ -172,7 +173,7 @@ const ReportEmployerModal = ({
       toast.error("Some of the files you were sending are too large.")
     } else {
       // Source: https://axios.rest/pages/advanced/error-handling:
-      // await axios.post("http://localhost:8920/api/pro/report/worker", {
+      // await axios.post(`${API_ORIGIN}/api/pro/report/worker`, {
       //   employerId,
       //   reportType: reportType === "Others" ? otherReason : reportType,
       //   description,
@@ -181,7 +182,7 @@ const ReportEmployerModal = ({
       // }, { withCredentials: true })
       //   .then(async function (response) {
       //     // Source: https://axios.rest/pages/advanced/error-handling:
-      //     await axios.post("http://localhost:8920/api/pro/report/submit/evidence", formData, {
+      //     await axios.post(`${API_ORIGIN}/api/pro/report/submit/evidence`, formData, {
       //       withCredentials: true
       //     })
       //       .then(function (response) {
@@ -205,7 +206,7 @@ const ReportEmployerModal = ({
       //   });
 
       // Source: https://axios.rest/pages/advanced/error-handling:
-      await axios.post("http://localhost:8920/api/pro/report/submit/evidence", formData, {
+      await axios.post(`${API_ORIGIN}/api/pro/report/submit/evidence`, formData, {
         withCredentials: true
       })
         .then(async function (response) {
@@ -218,7 +219,7 @@ const ReportEmployerModal = ({
               fileType: submitEvidence[submit].mimetype
             })
           }
-          await axios.post("http://localhost:8920/api/pro/report/worker", {
+          await axios.post(`${API_ORIGIN}/api/pro/report/worker`, {
             employerId,
             reportType: reportType === "Others" ? otherReason : reportType,
             description,

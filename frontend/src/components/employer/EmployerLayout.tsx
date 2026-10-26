@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { Outlet } from "react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
@@ -25,7 +26,7 @@ export default function EmployerLayout() {
         console.log("Fetching employer profile...");
 
         const res = await axios.get(
-          "http://localhost:8920/api/pro/employer/information",
+          `${API_ORIGIN}/api/pro/employer/information`,
           { withCredentials: true }
         );
 

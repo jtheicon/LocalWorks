@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { Calendar, ClipboardList } from "lucide-react";
@@ -134,7 +135,7 @@ const WorkerAssignment = () => {
 
       // Upload the actual files first
       const uploadRes = await axios.post(
-        "http://localhost:8920/api/pro/upload/worker/jobFile",
+        `${API_ORIGIN}/api/pro/upload/worker/jobFile`,
         formData,
         {
           withCredentials: true,
@@ -148,7 +149,7 @@ const WorkerAssignment = () => {
 
       for (const file of uploadedFiles) {
         await axios.post(
-          "http://localhost:8920/api/pro/new/worker/job",
+          `${API_ORIGIN}/api/pro/new/worker/job`,
           {
             jobCompleted,
             name: file.filename,
@@ -205,7 +206,7 @@ const WorkerAssignment = () => {
         toast.error("This doesn't accept late submissions.")
       } else {
         const uploadRes = await axios.post(
-          "http://localhost:8920/api/pro/upload/worker/jobFile",
+          `${API_ORIGIN}/api/pro/upload/worker/jobFile`,
           formData,
           {
             withCredentials: true,
@@ -221,7 +222,7 @@ const WorkerAssignment = () => {
 
         // Create one JobsCompleted document per uploaded file
         await axios.post(
-          `http://localhost:8920/api/pro/upload/worker/job/${selectedAssignment.workerAssignment.employerId._id}`,
+          `${API_ORIGIN}/api/pro/upload/worker/job/${selectedAssignment.workerAssignment.employerId._id}`,
           {
             workerAssignment: selectedAssignment.workerAssignment._id,
             workerUpload: uploadedFiles,
@@ -259,7 +260,7 @@ const WorkerAssignment = () => {
   const fetchAssignments = async () => {
     try {
       const res = await axios.get(
-        "http://localhost:8920/api/pro/worker-assignments",
+        `${API_ORIGIN}/api/pro/worker-assignments`,
         {
           withCredentials: true,
         }
@@ -276,7 +277,7 @@ const WorkerAssignment = () => {
   const getSubmittedFiles = async (assignmentId: string) => {
     try {
       const res = await axios.get(
-        `http://localhost:8920/api/pro/jobs/submitted/${assignmentId}`,
+        `${API_ORIGIN}/api/pro/jobs/submitted/${assignmentId}`,
         {
           withCredentials: true,
         }
@@ -301,7 +302,7 @@ const WorkerAssignment = () => {
   const removeFile = async (WorkerAssignment: string) => {
     try {
       await axios.delete(
-        `http://localhost:8920/api/pro/worker/job/file/${WorkerAssignment}`,
+        `${API_ORIGIN}/api/pro/worker/job/file/${WorkerAssignment}`,
         
         {
           withCredentials: true,
@@ -321,7 +322,7 @@ const WorkerAssignment = () => {
   const removeFileFromJobCompleted = async (name: string, _id: string) => {
     try {
       await axios.delete(
-        `http://localhost:8920/api/pro/worker/job/${name}/${_id}`,
+        `${API_ORIGIN}/api/pro/worker/job/${name}/${_id}`,
         
         {
           withCredentials: true,
@@ -341,7 +342,7 @@ const WorkerAssignment = () => {
   const handleAssignmentSubmit = async (workerAssignment: string, employerId: string, employerEmail: string) => {
     try {
       await axios.patch(
-        "http://localhost:8920/api/pro/update/worker/job/worker",
+        `${API_ORIGIN}/api/pro/update/worker/job/worker`,
         {
           workerAssignment,
           employerId,
@@ -878,7 +879,7 @@ const WorkerAssignment = () => {
                           className="mt-2 flex items-center gap-2"
                         >
                           <a
-                            href={`http://localhost:8920/uploads/workerJobsCompleted/${workerUpload.name}`}
+                            href={`${API_ORIGIN}/uploads/workerJobsCompleted/${workerUpload.name}`}
                             target="_blank"
                             rel="noreferrer"
                             className="block h-10 min-w-0 flex-1 truncate rounded-md bg-gray-100 px-3 py-2 text-sm text-blue-600 underline transition-colors hover:bg-gray-200 hover:text-blue-800"
@@ -1017,7 +1018,7 @@ const WorkerAssignment = () => {
                           className="mt-2 flex items-center gap-2"
                         >
                           <a
-                            href={`http://localhost:8920/uploads/workerJobsCompleted/${workerUpload.name}`}
+                            href={`${API_ORIGIN}/uploads/workerJobsCompleted/${workerUpload.name}`}
                             target="_blank"
                             rel="noreferrer"
                             className="block h-10 min-w-0 flex-1 truncate rounded-md bg-gray-100 px-3 py-2 text-sm text-blue-600 underline transition-colors hover:bg-gray-200 hover:text-blue-800"

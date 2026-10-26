@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useEffect, useState } from "react";
 import CredibilityBadge, { useCredibility } from "@/components/CredibilityBadge";
 import { Button } from "@/components/ui/button";
@@ -77,7 +78,7 @@ const WorkerCard = ({ worker, credibility, onContact, onReport, recommendation }
       <CardHeader className="pb-2">
         <div className="flex items-start gap-4">
           <Avatar className="w-16 h-16">
-            <AvatarImage src={`http://localhost:8920${worker.photo}`} />
+            <AvatarImage src={`${API_ORIGIN}${worker.photo}`} />
             <AvatarFallback className="bg-primary/10 text-primary text-lg">
               {getInitials(worker.name)}
             </AvatarFallback>
@@ -168,7 +169,7 @@ const WorkerCard = ({ worker, credibility, onContact, onReport, recommendation }
           {worker.resume ? (
             <Button
               variant="outline"
-              onClick={() => window.open(`http://localhost:8920/uploads/resumes/${worker.resume}`, "_blank")}
+              onClick={() => window.open(`${API_ORIGIN}/uploads/resumes/${worker.resume}`, "_blank")}
             >
               View Resume
             </Button>
@@ -203,13 +204,13 @@ const BrowseWorkers = () => {
   // Workers already hired for this employer's jobs
   const { data, isLoading, error } = useQuery({
     queryKey: ['BrowseWorkersAx'],
-    queryFn: async () => (await axios.get("http://localhost:8920/api/pro/viewWorkers", { withCredentials: true })).data
+    queryFn: async () => (await axios.get(`${API_ORIGIN}/api/pro/viewWorkers`, { withCredentials: true })).data
   })
 
   // Open jobs to recommend workers for
   const { data: jobsData, isLoading: jobsLoading } = useQuery({
     queryKey: ["postedJobs"],
-    queryFn: async () => (await axios.get("http://localhost:8920/api/pro/viewPostedJobs")).data,
+    queryFn: async () => (await axios.get(`${API_ORIGIN}/api/pro/viewPostedJobs`)).data,
   });
   const openJobs: { _id: string; title: string }[] = (jobsData?.jobs ?? []).filter((j: any) => j.status === "ACCEPTED");
 
@@ -219,7 +220,7 @@ const BrowseWorkers = () => {
 
   const { data: recommendedData, isFetching: recommendedLoading, error: recommendedError } = useQuery({
     queryKey: ["recommendedWorkers", jobId],
-    queryFn: async () => (await axios.get(`http://localhost:8920/api/pro/recommendedWorkers/${jobId}`)).data,
+    queryFn: async () => (await axios.get(`${API_ORIGIN}/api/pro/recommendedWorkers/${jobId}`)).data,
     enabled: !!jobId,
   });
 

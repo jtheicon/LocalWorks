@@ -163,7 +163,7 @@ const WorkerApplications = () => {
   /* ----------------------------- Fetch Data ------------------------------ */
   const fetchApplications = async () => {
     const { data } = await axios.get(
-      "http://localhost:8920/api/pro/viewApplications/employer"
+      `${API_ORIGIN}/api/pro/viewApplications/employer`
     );
     return data;
   };
@@ -189,14 +189,14 @@ const WorkerApplications = () => {
       application: Application;
     }) => {
       if (status === "Interview Scheduled" && interviewDate) {
-        await axios.put("http://localhost:8920/api/pro/date", {
+        await axios.put(`${API_ORIGIN}/api/pro/date`, {
           _id,
           interviewDate,
         });
       }
 
       await axios.put(
-        "http://localhost:8920/api/pro/update/application",
+        `${API_ORIGIN}/api/pro/update/application`,
         { _id, status, timeline }
       );
     },
@@ -305,7 +305,7 @@ const WorkerApplications = () => {
 
       if (title.length && description.length) {
 
-        await axios.post("http://localhost:8920/api/pro/application/reason", { 
+        await axios.post(`${API_ORIGIN}/api/pro/application/reason`, {
           workerId: application.worker._id, 
           jobId: application.job._id, 
           applicationId: application._id, 
@@ -587,7 +587,7 @@ const ApplicationSection = ({
   );
 
   const handleViewEmployerConversation = async (application) => {
-    await axios.get("http://localhost:8920/api/pro/responses/" + application._id)
+    await axios.get(`${API_ORIGIN}/api/pro/responses/` + application._id)
       .then(function (response) {
         setEmployerConversation(application);
         SetReasonsList(response.data.EmployerResponses);

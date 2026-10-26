@@ -47,6 +47,56 @@ npm run build
 npm run preview  # serve the built output for a quick test
 ```
 
+### Production deployment
+
+After configuring Nginx as below and pushing the deployment changes to `main`,
+run `bash ./deploy.sh` from the repository root on the server.
+
+The production frontend uses same-origin API and Socket.IO URLs by default. Serve
+`dist/` from Nginx and proxy the backend routes to the API on `127.0.0.1:8920`;
+do not point browser code at `localhost:8920` (that refers to each visitor's
+computer). A site configuration should include these locations alongside its
+TLS configuration:
+
+```nginx
+root /var/www/localworks;
+index index.html;
+
+location /api/ {
+    proxy_pass http://127.0.0.1:8920;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /uploads/ {
+    proxy_pass http://127.0.0.1:8920;
+}
+
+location /public/ {
+    proxy_pass http://127.0.0.1:8920;
+}
+
+location /socket.io/ {
+    proxy_pass http://127.0.0.1:8920;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+}
+
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+Build the backend before starting its production entry point with
+`npm run build` and `npm run start:prod` from `backend/`. Build the frontend
+without setting `VITE_API_URL` to use same-origin requests. Production
+authentication cookies are marked `Secure`, so serve the site over HTTPS with a
+domain and a valid TLS certificate; plain HTTP is not a production-ready setup.
+
 ### Scripts
 
 | Command | Description |

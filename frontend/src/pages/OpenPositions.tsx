@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { Card, CardHeader, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import axios from "axios";
@@ -16,7 +17,7 @@ const OpenPositions = () => {
   const [jobDetailsModalOpen, setJobDetailsModalOpen] = useState(false)
   const [jobInfo, setJobInfo] = useState(null)
   const OpenPosition = async () => {
-    const result = await axios.get("http://localhost:8920/api/pro/company", { withCredentials: true })
+    const result = await axios.get(`${API_ORIGIN}/api/pro/company`, { withCredentials: true })
     return result.data
   }
 

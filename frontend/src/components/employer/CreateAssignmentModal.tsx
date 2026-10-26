@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useEffect, useState } from "react";
 import axios from "axios";
 
@@ -47,7 +48,7 @@ const CreateAssignmentModal = ({
   const fetchWorkers = async () => {
     try {
       const res = await axios.get(
-        "http://localhost:8920/api/pro/viewWorkers",
+        `${API_ORIGIN}/api/pro/viewWorkers`,
         {
           withCredentials: true,
         }
@@ -99,7 +100,7 @@ const CreateAssignmentModal = ({
 
     try {
       const res = await axios.post(
-        "http://localhost:8920/api/pro/worker/assignment",
+        `${API_ORIGIN}/api/pro/worker/assignment`,
         {
           targetWorkers: workers,
           title,

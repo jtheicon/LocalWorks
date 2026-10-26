@@ -113,17 +113,17 @@ const EmployerOverview = ({ notifications, onNavigate, onPostJob }: EmployerOver
 
   const { data: company } = useQuery({
     queryKey: ["CompanyInfo"],
-    queryFn: async () => (await axios.get("http://localhost:8920/api/pro/company")).data,
+    queryFn: async () => (await axios.get(`${API_ORIGIN}/api/pro/company`)).data,
   });
 
   const { data: jobsData, isLoading: jobsLoading } = useQuery({
     queryKey: ["postedJobs"],
-    queryFn: async () => (await axios.get("http://localhost:8920/api/pro/viewPostedJobs")).data,
+    queryFn: async () => (await axios.get(`${API_ORIGIN}/api/pro/viewPostedJobs`)).data,
   });
 
   const { data: applicationsData, isLoading: applicationsLoading } = useQuery({
     queryKey: ["ViewApplicationsEmployer"],
-    queryFn: async () => (await axios.get("http://localhost:8920/api/pro/viewApplications/employer")).data,
+    queryFn: async () => (await axios.get(`${API_ORIGIN}/api/pro/viewApplications/employer`)).data,
   });
 
   const jobs: PostedJob[] = (jobsData?.jobs ?? []).filter((job: PostedJob) => job.status !== "DELETED");

@@ -1,9 +1,8 @@
-/** Backend origin for REST + socket. In dev, use same-origin (Vite proxy → :8920) so auth cookies work. */
+/** Backend origin for REST + sockets; production uses same-origin requests through the reverse proxy. */
 export const resolveApiOrigin = (): string => {
   const fromEnv = import.meta.env.VITE_API_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");
-  if (import.meta.env.DEV) return "";
-  return "http://localhost:8920";
+  return "";
 };
 
 export const API_ORIGIN = resolveApiOrigin();

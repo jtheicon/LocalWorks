@@ -1,11 +1,12 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 
 // Which dashboard the visitor is already signed in to, if any.
 const fetchDashboardPath = async (): Promise<string | null> => {
   const checks = [
-    { url: "http://localhost:8920/api/pro/isEmployerLogged", path: "/employer-dashboard" },
-    { url: "http://localhost:8920/api/pro/isWorkerLogged", path: "/worker-dashboard" },
+    { url: `${API_ORIGIN}/api/pro/isEmployerLogged`, path: "/employer-dashboard" },
+    { url: `${API_ORIGIN}/api/pro/isWorkerLogged`, path: "/worker-dashboard" },
   ];
   for (const { url, path } of checks) {
     try {

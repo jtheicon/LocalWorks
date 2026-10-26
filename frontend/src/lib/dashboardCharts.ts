@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 // Data behind the admin dashboard charts (components/admin/AdminAnalytics.tsx), shared with
 // the PDF report so the downloaded charts match what the dashboard shows.
 import axios from "axios";
@@ -39,7 +40,7 @@ export interface AnalyticsData {
 export const ANALYTICS_QUERY_KEY = ["adminAnalytics"];
 
 export const fetchAdminAnalytics = async (): Promise<AnalyticsData> =>
-  (await axios.get("http://localhost:8920/api/admin/analytics", { withCredentials: true })).data;
+  (await axios.get(`${API_ORIGIN}/api/admin/analytics`, { withCredentials: true })).data;
 
 // Light-mode values of the dashboard's --series-1..3 colors.
 const SERIES_COLORS = ["#2a78d6", "#eb6834", "#1baf7a"];

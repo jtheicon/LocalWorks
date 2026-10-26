@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
@@ -70,7 +71,7 @@ const Contacts = () => {
 
   const fetchContacts = async () => {
     const { data } = await axios.get(
-      "http://localhost:8920/api/pro/contacts",
+      `${API_ORIGIN}/api/pro/contacts`,
       {
         withCredentials: true,
       }
@@ -85,7 +86,7 @@ const Contacts = () => {
     }
 
     const { data } = await axios.get(
-      `http://localhost:8920/api/pro/message/${selectedChat._id}`,
+      `${API_ORIGIN}/api/pro/message/${selectedChat._id}`,
       {
         withCredentials: true,
       }
@@ -117,7 +118,7 @@ const Contacts = () => {
       }
 
       const response = await axios.post(
-        `http://localhost:8920/api/pro/message/${selectedChat._id}`,
+        `${API_ORIGIN}/api/pro/message/${selectedChat._id}`,
         {
           content: message.trim(),
           recipient: selectedChat.employerId._id, // or employerId depending on role
@@ -146,7 +147,7 @@ const Contacts = () => {
   const markAsRead = useMutation({
     mutationFn: async (contactId: string) => {
       const { data } = await axios.patch(
-        `http://localhost:8920/api/pro/contacts/${contactId}/read`,
+        `${API_ORIGIN}/api/pro/contacts/${contactId}/read`,
         {},
         {
           withCredentials: true,

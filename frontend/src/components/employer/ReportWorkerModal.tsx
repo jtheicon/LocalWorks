@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import axios from "axios";
 
@@ -42,7 +43,7 @@ export const EmployerReportModal = (val: { open: boolean, onOpenChange: (open: b
   const [submitEvidence, setEvidence] = useState(null)
 
   const handleSubmit = async () => {
-    await axios.put("http://localhost:8920/api/pro/report", {
+    await axios.put(`${API_ORIGIN}/api/pro/report`, {
       reportId: val.reportId,
       reportType: Reason === null ? ReportType === null ? val.reportType : ReportType : Reason,
       description: Description === null ? val.description : Description
@@ -170,7 +171,7 @@ const ReportWorkerModal = ({
     if (fullStorage) {
       toast.error("Some of the files you were sending are too large.")
     } else {
-      await axios.post("http://localhost:8920/api/pro/report/submit/evidence", formData, {
+      await axios.post(`${API_ORIGIN}/api/pro/report/submit/evidence`, formData, {
         withCredentials: true
       })
         .then(async function (response) {
@@ -185,7 +186,7 @@ const ReportWorkerModal = ({
           }
 
           // Source: https://axios.rest/pages/advanced/error-handling:
-          await axios.post("http://localhost:8920/api/pro/report/employer", {
+          await axios.post(`${API_ORIGIN}/api/pro/report/employer`, {
             workerId,
             reportType: reportType === "Others" ? otherReason : reportType,
             description,

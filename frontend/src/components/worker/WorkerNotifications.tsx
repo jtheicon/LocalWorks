@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState, useEffect } from "react";
 import { MessageCircle, MoreHorizontal } from "lucide-react";
 import axios from "axios";
@@ -58,7 +59,7 @@ const WorkerNotifications = () => {
 
   const fetchNotifications = async () => {
     const result = await axios.get(
-      "http://localhost:8920/api/pro/notifications",
+      `${API_ORIGIN}/api/pro/notifications`,
       {
         withCredentials: true,
       }
@@ -79,7 +80,7 @@ const WorkerNotifications = () => {
   const markAsReadMutation = useMutation({
     mutationFn: async (_id: string) => {
       return await axios.patch(
-        `http://localhost:8920/api/pro/markAsRead/${_id}`,
+        `${API_ORIGIN}/api/pro/markAsRead/${_id}`,
         {
           withCredentials: true,
         }
@@ -102,7 +103,7 @@ const WorkerNotifications = () => {
   const deleteNotificationMutation = useMutation({
     mutationFn: async (_id: string) => {
       return await axios.delete(
-        `http://localhost:8920/api/pro/deleteNotif/${_id}`,
+        `${API_ORIGIN}/api/pro/deleteNotif/${_id}`,
         {
           withCredentials: true,
         }
@@ -125,7 +126,7 @@ const WorkerNotifications = () => {
   const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
       return await axios.patch(
-        "http://localhost:8920/api/pro/markAllAsRead",
+        `${API_ORIGIN}/api/pro/markAllAsRead`,
         {},
         {
           withCredentials: true,

@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,7 +55,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
         return;
       }
 
-      await axios.get(`http://localhost:8920/api/auth/otp/${OTPEMAIL}/${role}`)
+      await axios.get(`${API_ORIGIN}/api/auth/otp/${OTPEMAIL}/${role}`)
         .then(function () {
           setStep("otp")
           setDisabled(true)
@@ -66,7 +67,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
     };
 
   const logWorker = async () => {
-    await axios.post("http://localhost:8920/api/auth/worker/login", {
+    await axios.post(`${API_ORIGIN}/api/auth/worker/login`, {
       ...workerCredentials, role: "worker"
     })
       .then(function (response) {
@@ -92,7 +93,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
   }
 
   const logEmployer = async () => {
-    await axios.post("http://localhost:8920/api/auth/employer/login", {
+    await axios.post(`${API_ORIGIN}/api/auth/employer/login`, {
       ...employerCredentials, role: "employer"
     })
       .then(function (response) {
@@ -114,7 +115,7 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
   }
 
   const handlePassword = async () => {
-    await axios.put("http://localhost:8920/api/auth/password/update", { email: OTPEMAIL, role: userRole, create_password, confirm_password, resetToken }, {
+    await axios.put(`${API_ORIGIN}/api/auth/password/update`, { email: OTPEMAIL, role: userRole, create_password, confirm_password, resetToken }, {
       withCredentials: true
     })
       .then(function (response) {

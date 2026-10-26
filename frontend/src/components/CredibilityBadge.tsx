@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldCheck, Shield, ShieldAlert, Sparkles } from "lucide-react";
@@ -25,7 +26,7 @@ export const useCredibility = (role: "worker" | "employer", ids: (string | undef
   return useQuery<Record<string, Credibility>>({
     queryKey: ["credibility", role, unique],
     queryFn: async () =>
-      (await axios.post("http://localhost:8920/api/pro/credibility", { role, ids: unique })).data.scores,
+      (await axios.post(`${API_ORIGIN}/api/pro/credibility`, { role, ids: unique })).data.scores,
     enabled: unique.length > 0,
     staleTime: 60_000,
   });

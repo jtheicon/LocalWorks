@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import {
   Dialog,
   DialogContent,
@@ -143,7 +144,7 @@ const EmployerConversationModal = ({
   const [description, setDescription] = useState(null)
 
   const submitResponse = async () => {
-    await axios.post("http://localhost:8920/api/pro/application/reason", {
+    await axios.post(`${API_ORIGIN}/api/pro/application/reason`, {
       title,
       description,
       jobId: extendedApp.job._id,
@@ -153,7 +154,7 @@ const EmployerConversationModal = ({
       withCredentials: true
     })
       .then(async function (response) {
-        await axios.get("http://localhost:8920/api/pro/responses/" + extendedApp._id)
+        await axios.get(`${API_ORIGIN}/api/pro/responses/` + extendedApp._id)
           .then(function (response) {
             SetReasonsList(response.data.EmployerResponses);
             setTitle("")
@@ -215,7 +216,7 @@ const EmployerConversationModal = ({
                   <div className="mb-8">
                     <div className="flex">
                       <div >
-                        <img src={`http://localhost:8920/uploads/profile/${response.employerId.profile}`} alt="Profile" className="h-20 w-20" />
+                        <img src={`${API_ORIGIN}/uploads/profile/${response.employerId.profile}`} alt="Profile" className="h-20 w-20" />
                       </div>
                       <div className="flex flex-col ml-3">
                         <span className="font-bold">Employer Email: {response.employerId.email}</span>
@@ -233,7 +234,7 @@ const EmployerConversationModal = ({
                   <div className="mb-8">
                     <div className="flex flex-row-reverse">
                       <div >
-                        <img src={`http://localhost:8920/uploads/profile/${response.workerId.photo === null ? "default.png" : response.workerId.photo}`} alt="Profile" className="h-20 w-20" />
+                        <img src={`${API_ORIGIN}/uploads/profile/${response.workerId.photo === null ? "default.png" : response.workerId.photo}`} alt="Profile" className="h-20 w-20" />
                       </div>
                       <div className="flex flex-col mr-3">
                         <span className="font-bold">Worker Email: {response.workerId.email}</span>

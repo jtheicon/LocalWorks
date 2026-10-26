@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { Calendar, ClipboardList } from "lucide-react";
@@ -129,7 +130,7 @@ const WorkerAssignments = () => {
   const fetchAssignments = async () => {
     try {
       const res = await axios.get(
-        "http://localhost:8920/api/pro/worker-assignments",
+        `${API_ORIGIN}/api/pro/worker-assignments`,
         {
           withCredentials: true,
         }
@@ -146,7 +147,7 @@ const WorkerAssignments = () => {
   const fetchSubmittedJobs = async () => {
     try {
       const res = await axios.get(
-        "http://localhost:8920/api/pro/submitted/worker/assignments",
+        `${API_ORIGIN}/api/pro/submitted/worker/assignments`,
         {
           withCredentials: true,
         }
@@ -162,7 +163,7 @@ const WorkerAssignments = () => {
   const fetchSubmittedAssignment = async (workerId: string, employerId: string, workerAssignment: string) => {
     try {
       const res = await axios.get(
-        `http://localhost:8920/api/pro/worker/assignment/${workerId}/${employerId}/${workerAssignment}`,
+        `${API_ORIGIN}/api/pro/worker/assignment/${workerId}/${employerId}/${workerAssignment}`,
         {
           withCredentials: true,
         }
@@ -185,7 +186,7 @@ const WorkerAssignments = () => {
   ) => {
     try {
       const res = await axios.patch(
-        "http://localhost:8920/api/pro/update/worker/job/employer",
+        `${API_ORIGIN}/api/pro/update/worker/job/employer`,
         {
           workerAssignment,
           workerId,
@@ -519,7 +520,7 @@ const WorkerAssignments = () => {
                 
                 {submitted.workerUpload.map((workerUpload) => (
                   <a
-                    href={`http://localhost:8920/uploads/workerJobsCompleted/${workerUpload.name}`}
+                    href={`${API_ORIGIN}/uploads/workerJobsCompleted/${workerUpload.name}`}
                     target="_blank"
                     rel="noreferrer"
                     className="block h-10 mb-1 min-w-0 flex-1 truncate rounded-md bg-gray-100 px-3 py-2 text-sm text-blue-600 underline transition-colors hover:bg-gray-200 hover:text-blue-800"

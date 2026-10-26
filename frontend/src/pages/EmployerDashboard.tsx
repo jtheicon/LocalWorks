@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import Contacts from "@/components/employer/Contacts";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ const EmployerDashboard = () => {
 
   const fetchNotifications = async () => {
     const result = await axios.get(
-      "http://localhost:8920/api/pro/notifications",
+      `${API_ORIGIN}/api/pro/notifications`,
       {
         withCredentials: true,
       }
@@ -46,7 +47,7 @@ const EmployerDashboard = () => {
   const markAsReadMutation = useMutation({
     mutationFn: async (_id: string) => {
       return axios.patch(
-        `http://localhost:8920/api/pro/markAsRead/${_id}`,
+        `${API_ORIGIN}/api/pro/markAsRead/${_id}`,
         {},
         {
           withCredentials: true,
@@ -106,7 +107,7 @@ const EmployerDashboard = () => {
   const markAllAsReadMutation = useMutation({
     mutationFn: async () => {
       return axios.patch(
-        "http://localhost:8920/api/pro/markAllAsRead",
+        `${API_ORIGIN}/api/pro/markAllAsRead`,
         {},
         { withCredentials: true }
       );
@@ -141,7 +142,7 @@ const EmployerDashboard = () => {
   const deleteMutation = useMutation({
     mutationFn: async(id:string)=>{
       return axios.delete(
-        `http://localhost:8920/api/pro/deleteNotif/${id}`,
+        `${API_ORIGIN}/api/pro/deleteNotif/${id}`,
         {
           withCredentials:true
         }
@@ -162,7 +163,7 @@ const EmployerDashboard = () => {
   const [activeTab, setActiveTab] = useState("dashboard");
 
   const isEmployerLogged = async () => {
-    const result = await axios.get("http://localhost:8920/api/pro/isEmployerLogged", { withCredentials: true })
+    const result = await axios.get(`${API_ORIGIN}/api/pro/isEmployerLogged`, { withCredentials: true })
     return result.data
   }
 

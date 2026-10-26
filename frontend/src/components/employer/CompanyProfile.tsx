@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,7 @@ const CompanyProfile = () => {
     const [editProfileOpen, setEditProfileOpen] = useState(false);
     
   const FetchingCompanyInfo = async () => {
-    const { data } = await axios.get("http://localhost:8920/api/pro/company", {
+    const { data } = await axios.get(`${API_ORIGIN}/api/pro/company`, {
       withCredentials: true
     })
 

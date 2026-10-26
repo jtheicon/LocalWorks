@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import {
@@ -44,7 +45,7 @@ const Reports = () => {
     recipientId: string;
   }) => {
     const res = await axios.patch(
-      "http://localhost:8920/api/pro/employer/report",
+      `${API_ORIGIN}/api/pro/employer/report`,
       {
         report,
         status,
@@ -66,7 +67,7 @@ const Reports = () => {
     type: "deleteAll" | "deleteById";
   }) => {
     const res = await axios.delete(
-      "http://localhost:8920/api/pro/delete/report",
+      `${API_ORIGIN}/api/pro/delete/report`,
       {
         data: {
           _id,
@@ -119,7 +120,7 @@ const Reports = () => {
 
   const fetchReports = async () => {
     const res = await axios.get(
-      "http://localhost:8920/api/pro/reports",
+      `${API_ORIGIN}/api/pro/reports`,
       { withCredentials: true }
     );
 
@@ -169,7 +170,7 @@ const Reports = () => {
 
   const handleSubmit = async (reportId: string, reportType: string, description: string) => {
 
-    await axios.put("http://localhost:8920/api/pro/report", { reportId, reportType, description }, {
+    await axios.put(`${API_ORIGIN}/api/pro/report`, { reportId, reportType, description }, {
       withCredentials: true
     })
       .then(function (response) {
@@ -191,7 +192,7 @@ const Reports = () => {
         fileType: submitEvidence[SubmitIndex].mimetype
       })
     }
-    await axios.put("http://localhost:8920/api/pro/update/evidences", {
+    await axios.put(`${API_ORIGIN}/api/pro/update/evidences`, {
       reportId,
       submitEvidence: ArraySubmit
     }, { withCredentials: true })
@@ -234,7 +235,7 @@ const Reports = () => {
     } else {
 
       // Source: https://axios.rest/pages/advanced/error-handling:
-      await axios.post("http://localhost:8920/api/pro/report/submit/evidence", formData, {
+      await axios.post(`${API_ORIGIN}/api/pro/report/submit/evidence`, formData, {
         withCredentials: true
       })
         .then(function (response) {
@@ -249,7 +250,7 @@ const Reports = () => {
 
   // Delete the evidence:
   const DeleteReportX = async (reportId, fileName, fileID) => {
-    await axios.delete(`http://localhost:8920/api/pro/delete/report/x/${reportId}/${fileName}/${fileID}`, {
+    await axios.delete(`${API_ORIGIN}/api/pro/delete/report/x/${reportId}/${fileName}/${fileID}`, {
       withCredentials: true
     })
       .then(function (response) {
@@ -271,7 +272,7 @@ const Reports = () => {
 
   // Delete Reports:
   const DeleteReports = async () => {
-    await axios.delete("http://localhost:8920/api/pro/delete/reports", { withCredentials: true })
+    await axios.delete(`${API_ORIGIN}/api/pro/delete/reports`, { withCredentials: true })
       .then(function (response) {
         Refetch
         toast.success(response.data.info)
@@ -283,7 +284,7 @@ const Reports = () => {
 
   // Delete Report:
   const DeleteReport = async (reportId) => {
-    await axios.delete(`http://localhost:8920/api/pro/delete/report/${reportId}`, { withCredentials: true })
+    await axios.delete(`${API_ORIGIN}/api/pro/delete/report/${reportId}`, { withCredentials: true })
       .then(function (response) {
         Refetch
         toast.success(response.data.info)
@@ -494,7 +495,7 @@ const Reports = () => {
                       className="mt-2 flex items-center gap-2"
                     >
                       <a
-                        href={`http://localhost:8920/uploads/reports/${evidence.fileName}`}
+                        href={`${API_ORIGIN}/uploads/reports/${evidence.fileName}`}
                         target="_blank"
                         rel="noreferrer"
                         className="block h-10 min-w-0 flex-1 truncate rounded-md bg-gray-100 px-3 py-2 text-sm text-blue-600 underline transition-colors hover:bg-gray-200 hover:text-blue-800"

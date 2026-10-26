@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
@@ -50,7 +51,7 @@ const EmployerHeader = ({ notifications, onViewNotifications }: EmployerHeaderPr
   const [editProfileOpen, setEditProfileOpen] = useState(false);
 
   const employer = async () => {
-    const result = await axios.get("http://localhost:8920/api/pro/employer/information")
+    const result = await axios.get(`${API_ORIGIN}/api/pro/employer/information`)
     return result.data
   }
 
@@ -114,7 +115,7 @@ const EmployerHeader = ({ notifications, onViewNotifications }: EmployerHeaderPr
             <Avatar className="h-9 w-9">
               {profile && (
                 <AvatarImage
-                  src={`http://localhost:8920/uploads/profile/${profile}`}
+                  src={`${API_ORIGIN}/uploads/profile/${profile}`}
                   alt="Employer"
                 />
               )}

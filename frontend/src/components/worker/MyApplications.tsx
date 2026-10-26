@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -110,7 +111,7 @@ const MyApplications = () => {
   };
 
   const handleViewEmployerConversation = async (application) => {
-    await axios.get("http://localhost:8920/api/pro/responses/" + application._id)
+    await axios.get(`${API_ORIGIN}/api/pro/responses/` + application._id)
       .then(function (response) {
         setEmployerConversation(application);
         SetReasonsList(response.data.EmployerResponses);
@@ -126,7 +127,7 @@ const MyApplications = () => {
   };
 
   const WithdrawApplication = async (id: any) => {
-    await axios.put("http://localhost:8920/api/pro/withdrawApplication", {
+    await axios.put(`${API_ORIGIN}/api/pro/withdrawApplication`, {
       _id: id
     }, { withCredentials: true })
       .then(function (response) {
@@ -154,7 +155,7 @@ const MyApplications = () => {
   };
 
   const Applications = async () => {
-    const { data } = await axios.get("http://localhost:8920/api/pro/viewApplications", { withCredentials: true })
+    const { data } = await axios.get(`${API_ORIGIN}/api/pro/viewApplications`, { withCredentials: true })
     return data
   }
 

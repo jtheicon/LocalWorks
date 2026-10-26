@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, Users, Briefcase, Search, MessageSquare, Flag, Bell, ClipboardList, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ const EmployerSidebar = ({ activeTab, onTabChange, unreadCount = 0 }: EmployerSi
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await axios.post("http://localhost:8920/api/pro/logout", {}, { withCredentials: true })
+    await axios.post(`${API_ORIGIN}/api/pro/logout`, {}, { withCredentials: true })
       .then(function (response) {
         if (response.data) {
           navigate("/")

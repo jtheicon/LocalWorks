@@ -16,7 +16,9 @@
     "seed:inactivity-email-5mo": "dotenvx run -- ts-node src/scripts/seedInactivityEmailTour.ts -- --apply --run-5mo",
     "seed:inactivity-email-deletion": "dotenvx run -- ts-node src/scripts/seedInactivityEmailTour.ts -- --apply --run-deletion",
     "cleanup:stale-applications": "dotenvx run -- ts-node src/scripts/cleanupStaleEmployerApplications.ts",
-    "start": "dotenvx run -- nodemon --watch src --ext ts"
+    "start": "dotenvx run -- nodemon --watch src --ext ts",
+    "build": "tsc",
+    "start:prod": "dotenvx run -- node dist/server.js"
   },
   "keywords": [],
   "author": "",

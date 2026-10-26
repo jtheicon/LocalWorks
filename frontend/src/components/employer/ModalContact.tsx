@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 
 import {
@@ -32,7 +33,7 @@ const ModalContact = ({ open, onOpenChange, worker }: PostJobModalProps) => {
   });
 
   const PostContact = async () => {
-    await axios.post("http://localhost:8920/api/pro/contact", { ...formData, worker }, {
+    await axios.post(`${API_ORIGIN}/api/pro/contact`, { ...formData, worker }, {
       withCredentials: true
     })
       .then(function (response) {

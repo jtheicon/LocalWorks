@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import {
   Dialog,
@@ -32,7 +33,7 @@ const WriteReviewModal = ({
   const [text, setText] = useState("");
 
   const WorkerProfile = async () => {
-    const result = await axios.get("http://localhost:8920/api/pro/worker/profile", { withCredentials: true })
+    const result = await axios.get(`${API_ORIGIN}/api/pro/worker/profile`, { withCredentials: true })
 
     console.log(result.data)
     
@@ -52,7 +53,7 @@ const WriteReviewModal = ({
   if (error) return <div style={styleDisplay}>Error: {error.message}</div>
 
   const Rate = async (skill) => {
-    await axios.post("http://localhost:8920/api/pro/rating", { rating, description: text, skill }, { withCredentials: true })
+    await axios.post(`${API_ORIGIN}/api/pro/rating`, { rating, description: text, skill }, { withCredentials: true })
       .then(function (response) {
         if (response.data) {
           handleSubmit()
@@ -149,7 +150,7 @@ const WriteReviewModal = ({
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full overflow-hidden bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold">
                   <img
-                    src={`http://localhost:8920/uploads/profile/${data.WorkerProf.photo}`}
+                    src={`${API_ORIGIN}/uploads/profile/${data.WorkerProf.photo}`}
                     className="w-full h-full object-cover"
                   />
                 </div>

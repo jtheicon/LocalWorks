@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import {
   Dialog,
   DialogContent,
@@ -105,7 +106,7 @@ const WorkerProfileModal = ({
         {/* Header Section */}
         <div className="flex flex-col sm:flex-row items-start gap-4">
           <Avatar className="w-20 h-20">
-            <AvatarImage src={`http://localhost:8920${extendedWorker.worker.photo}`} />
+            <AvatarImage src={`${API_ORIGIN}${extendedWorker.worker.photo}`} />
             <AvatarFallback className="bg-primary/10 text-primary text-2xl">
               {getInitials(extendedWorker.worker.name)}
             </AvatarFallback>
@@ -172,7 +173,7 @@ const WorkerProfileModal = ({
               variant="outline"
               onClick={() =>
                 window.open(
-                  `http://localhost:8920/uploads/resumes/${extendedWorker.worker.resume}`,
+                  `${API_ORIGIN}/uploads/resumes/${extendedWorker.worker.resume}`,
                   "_blank"
                 )
               }

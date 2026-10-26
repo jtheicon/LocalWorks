@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import {
   Dialog,
@@ -117,7 +118,7 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
   const [preview, setPreview] = useState<string | null>(null);
 
   const ViewProfDetails = async () => {
-    const result = await axios.get("http://localhost:8920/api/pro/worker/profile", { withCredentials: true })
+    const result = await axios.get(`${API_ORIGIN}/api/pro/worker/profile`, { withCredentials: true })
 
     return result.data
   }
@@ -194,7 +195,7 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
 
 
       const response = await axios.put(
-        "http://localhost:8920/api/pro/worker/updateProfile",
+        `${API_ORIGIN}/api/pro/worker/updateProfile`,
         payload,
         {
           withCredentials: true,
@@ -269,7 +270,7 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
             {/* Existing photo from server */}
             {!preview && data?.WorkerProf?.photo && (
               <img
-                src={`http://localhost:8920/uploads/profile/${data.WorkerProf.photo}`}
+                src={`${API_ORIGIN}/uploads/profile/${data.WorkerProf.photo}`}
                 className="w-20 h-20 rounded-full object-cover"
                 alt="profile"
               />

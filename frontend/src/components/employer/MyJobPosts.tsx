@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState } from "react";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
@@ -28,7 +29,7 @@ const MyJobPosts = () => {
   const { data, isLoading, error } = useQuery({
     queryKey: ["postedJobs"],
     queryFn: async () => {
-      const { data } = await axios.get("http://localhost:8920/api/pro/viewPostedJobs");
+      const { data } = await axios.get(`${API_ORIGIN}/api/pro/viewPostedJobs`);
       return data;
     },
   });

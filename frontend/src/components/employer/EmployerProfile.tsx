@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MapPin, Phone, Mail, Briefcase, Calendar } from "lucide-react";
@@ -17,7 +18,7 @@ const EmployerProfile = () => {
   
 
   const viewProfile = async () => {
-    const { data } = await axios.get("http://localhost:8920/api/pro/employer/information", {
+    const { data } = await axios.get(`${API_ORIGIN}/api/pro/employer/information`, {
       withCredentials: true
     })
 
@@ -51,7 +52,7 @@ const EmployerProfile = () => {
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row items-start gap-6">
             <Avatar className="w-24 h-24">
-              <AvatarImage src={`http://localhost:8920/uploads/profile/${EmployerProf.profile}` || ""} />
+              <AvatarImage src={`${API_ORIGIN}/uploads/profile/${EmployerProf.profile}` || ""} />
 
               <AvatarFallback className="text-2xl bg-primary text-primary-foreground">
                 {EmployerProf.email

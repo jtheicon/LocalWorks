@@ -1,3 +1,4 @@
+import { API_ORIGIN } from "@/lib/apiOrigin";
 import { LogOut, User, FileText, UserCircle, Star } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import logo from "@/assets/logo.avif";
@@ -48,7 +49,7 @@ const DashboardHeader = () => {
     setSigningOut(true);
     try {
       const response = await axios.post(
-        "http://localhost:8920/api/pro/logout",
+        `${API_ORIGIN}/api/pro/logout`,
         {},
         { withCredentials: true },
       );
@@ -66,13 +67,13 @@ const DashboardHeader = () => {
   };
 
   const employer = async () => {
-    const result = await axios.get("http://localhost:8920/api/pro/employer/information")
+    const result = await axios.get(`${API_ORIGIN}/api/pro/employer/information`)
     return result.data
   }
 
   const fetchNotifications = async () => {
     const res = await axios.get(
-      "http://localhost:8920/api/pro/notifications",
+      `${API_ORIGIN}/api/pro/notifications`,
       { withCredentials: true }
     );
     return res.data.notifications;
@@ -110,7 +111,7 @@ const DashboardHeader = () => {
                 <Avatar className="h-10 w-10">
                   {profile && (
                     <AvatarImage
-                      src={`http://localhost:8920/uploads/profile/${profile}`}
+                      src={`${API_ORIGIN}/uploads/profile/${profile}`}
                       alt="Employer"
                     />
                   )}
