@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
-import { authCookieOptions } from "../config/http";
+import { authCookieOptions, clearAuthCookieOptions } from "../config/http";
 import { WorkerRegisterSchema, EmployerSchema, LoginSchema, AdminSchema, AdminLoginSchema, OnlyAccepted, SendEmailOTP, SendEmailForgotPasswordOTP, ForgotPasswordOTP, VerifyOTP } from "../validator/authentication";
 import jwt from "jsonwebtoken"
 import Worker from "../model/Worker";
@@ -27,6 +27,7 @@ import { issueOTP, verifyOTP, assertVerifiedEmail, OTPError } from "../services/
 import { namesMatch, readSignupDocumentToken, SignupDocumentError } from "../services/signupDocument";
 import { isEmailTaken, releaseDeletedAccount } from "../services/accounts";
 import { recordQualifyingActivity } from "../services/activityTracking";
+import { accountLoginFailure } from "../services/accountLoginStatus";
 
 // Source that resolved "Error: Invalid login: 535-5.7.8 Username and Password not accepted."
 // Link: https://laravelmail.com/blog/458-i-get-a-error-error-invalid-login-535-578-username/?srsltid=AfmBOor_5OgrHjOqJPiYk4AjAadRHtLMvX37IqiCdKApMZZre-Lbq7eI
@@ -660,28 +661,10 @@ export const EmployerLogin = async (req: Request, res: Response) => {
     const verify = await Employer.findOne({ email: user.email, role })
     if (!verify) return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
 
-    // Only reached after the password matched, so this does not reveal accounts to guessers.
-    if (user.status === "pending") return res.status(403).json({ success: false, message: "Your account is still being verified. We will email you once it is active." })
-    if (user.status === "not_active") {
-      const reason = user.get("deactivation")?.reason;
-      return res.status(403).json({
-        success: false,
-        code: "ACCOUNT_DEACTIVATED",
-        message:
-          reason === "admin"
-            ? "Your account was deactivated by an administrator. Contact support if you need access restored."
-            : "Your account is not active. Contact an administrator.",
-      })
-    }
-    if (user.status === "deleted") {
-      const inactivityDeleted = user.get("deactivation")?.reason === "inactivity";
-      return res.status(403).json({
-        success: false,
-        code: "ACCOUNT_DELETED",
-        message: inactivityDeleted
-          ? "Your account was deleted due to inactivity. Create a new account to use LocalWorks again."
-          : "This account has been deleted. Contact an administrator if you need help.",
-      });
+    const loginFailure = accountLoginFailure(user.status, user.get("deactivation")?.reason);
+    if (loginFailure) {
+      res.clearCookie("token", clearAuthCookieOptions);
+      return res.status(403).json({ success: false, ...loginFailure });
     }
     recordQualifyingActivity(String(user._id), user.role, true)
 
@@ -731,28 +714,10 @@ export const WorkerLogin = async (req: Request, res: Response) => {
     const verify = await Worker.findOne({ email: user.email, role })
     if (!verify) return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
     
-    // Only reached after the password matched, so this does not reveal accounts to guessers.
-    if (user.status === "pending") return res.status(403).json({ success: false, message: "Your account is still being verified. We will email you once it is active." })
-    if (user.status === "not_active") {
-      const reason = user.get("deactivation")?.reason;
-      return res.status(403).json({
-        success: false,
-        code: "ACCOUNT_DEACTIVATED",
-        message:
-          reason === "admin"
-            ? "Your account was deactivated by an administrator. Contact support if you need access restored."
-            : "Your account is not active. Contact an administrator.",
-      })
-    }
-    if (user.status === "deleted") {
-      const inactivityDeleted = user.get("deactivation")?.reason === "inactivity";
-      return res.status(403).json({
-        success: false,
-        code: "ACCOUNT_DELETED",
-        message: inactivityDeleted
-          ? "Your account was deleted due to inactivity. Create a new account to use LocalWorks again."
-          : "This account has been deleted. Contact an administrator if you need help.",
-      });
+    const loginFailure = accountLoginFailure(user.status, user.get("deactivation")?.reason);
+    if (loginFailure) {
+      res.clearCookie("token", clearAuthCookieOptions);
+      return res.status(403).json({ success: false, ...loginFailure });
     }
     recordQualifyingActivity(String(user._id), user.role, true)
 
