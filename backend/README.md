@@ -142,6 +142,8 @@ The backend schedules a job ~1 minute after startup, then **daily** (`scheduleAc
 | 3 / 4 / 5 | Warning emails |
 | 6+ | Purge related MongoDB data, scrub profile, optional S3 delete, `status: deleted`, deletion email |
 
+At 3, 4, and 5 months the account remains operational (`status: active` or `verified`) so the user can sign in and resume activity. The admin lifecycle is shown as **Inactive (monitoring)** and `inactivityWarningStage` advances to 3, 4, then 5. These reminder stages do not set `status: not_active`; that status is a deactivation/moderation state, not an inactivity-warning state.
+
 **Environment** (see [`.env.example`](.env.example)):
 
 - `INACTIVITY_MONTHS` — default `6`
@@ -155,11 +157,11 @@ The backend schedules a job ~1 minute after startup, then **daily** (`scheduleAc
 
 ### Inactivity email testing (`seed:inactivity-email-*`)
 
-These commands send real SMTP mail to **`INACTIVITY_LIFECYCLE_INBOX`** (default `joav.zabala.up@phinmaed.com`). The 3/4/5-month warning runs and the combined full tour use only `lifecycle-*@localworks-inactivity.test` fixtures. The deletion-only command is intentionally different: it finds the worker or employer account matching `INACTIVITY_LIFECYCLE_INBOX`, backdates it to six months idle, then runs the real deletion/purge flow on that account.
+These commands send real SMTP mail to **`INACTIVITY_LIFECYCLE_INBOX`** (default `joav.zabala.up@phinmaed.com`). The individual 3/4/5-month commands find the unique worker or employer account matching that address, seed it to the requested inactivity stage, and run the real monitor so Admin lifecycle state and the warning stage update on that account. The combined `--run-job` email tour continues to use only `lifecycle-*@localworks-inactivity.test` fixtures. The deletion-only command targets the configured inbox account and permanently deletes it after six months.
 
 This is separate from **`seed:inactivity`**, which seeds broader admin/UI demo accounts.
 
-For fixture runs, configure `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `SEED_DEMO_PASSWORD` (min 8 chars), `MONGO_URI` for the intended database, `EMAIL_USER`, `EMAIL_PASS` (Gmail App Password), `EMAIL_OWNER`, and `APP_URL`. Email settings and `APP_URL` are required for email runs. The deletion-only command also requires an explicitly configured `INACTIVITY_LIFECYCLE_INBOX` and the second, destructive opt-in `SEED_DELETE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_DELETES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT`. It aborts without changing data if no matching account exists, more than one account matches across worker/employer collections, or its status is not `active`/`verified`. Do not set this opt-in unless you intend to permanently delete and scrub the configured account.
+Configure `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `MONGO_URI` for the intended database, `EMAIL_USER`, `EMAIL_PASS` (Gmail App Password), `EMAIL_OWNER`, and `APP_URL`. Email settings and `APP_URL` are required for email runs. Fixture upserts and the combined `--run-job` tour also need `SEED_DEMO_PASSWORD` (min 8 characters). The individual 3/4/5-month commands additionally require an explicitly configured `INACTIVITY_LIFECYCLE_INBOX` and `SEED_BACKDATE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_BACKDATES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT`. They change that account's `lastActiveAt`, `updatedAt`, warning stage, and notification timestamp to simulate the requested point in the timeline; its platform status remains `active`/`verified` so the account can still sign in during the warning period. These commands abort if the matching account is missing, ambiguous across worker/employer collections, or not operational. The deletion-only command instead requires `SEED_DELETE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_DELETES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT`; do not set it unless you intend to permanently delete and scrub the configured account.
 
 | Goal | Command |
 |------|---------|
@@ -171,7 +173,7 @@ For fixture runs, configure `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO
 | Preview policy (no DB writes) | `npm run seed:inactivity-email-tour` |
 | Remove tour workers | `npm run seed:inactivity-email-tour -- --reset` |
 
-Warning fixtures are reset to their expected idle months/stages before each run. The deletion-only inbox test is not safe to rerun: after it marks the configured platform account deleted and purges related data, it refuses to modify the already-deleted account. A fresh login with the same email should return HTTP 403 / `ACCOUNT_DELETED`. The combined `--run-job` tour continues to delete only its `.test` 6-month fixture.
+Each individual warning run checks that the configured inbox account's seeded idle date persisted, the monitor advanced it to the expected warning stage, and Admin lifecycle is `inactive`. It also disables Mongoose automatic timestamp updates during seeding so `updatedAt` cannot accidentally reset the idle clock to now. Warning-stage testing changes activity timestamps and sends a real email; the account remains operational. The deletion-only inbox test is not safe to rerun: after it marks the configured platform account deleted and purges related data, it refuses to modify the already-deleted account. A fresh login with the same email should return HTTP 403 / `ACCOUNT_DELETED`. The combined `--run-job` tour continues to delete only its `.test` 6-month fixture.
 
 The deletion-only command permanently deletes the matching configured account and related platform data, including eligible S3 uploads when configured. Make a backup and confirm the account is safe to delete before running it in production.
 

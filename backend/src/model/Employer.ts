@@ -15,7 +15,13 @@ export interface IEmployer extends Document {
   profile: string,
   permit: string,
   status: string,
-  role: string
+  role: string,
+  lastActiveAt?: Date,
+  inactivityWarningStage?: number,
+  lastInactivityNotificationAt?: Date,
+  deactivation?: Record<string, unknown> | null,
+  createdAt?: Date,
+  updatedAt?: Date,
 }
 
 const EmployerSchema: Schema = new Schema({

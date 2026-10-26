@@ -15,7 +15,8 @@
  * Env:
  *   SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION  (apply / reset)
  *   SEED_DEMO_PASSWORD=<min 8 chars>                                (apply)
- *   INACTIVITY_LIFECYCLE_INBOX=controlled-inbox@example.com        (mail recipient; deletion mode targets its account)
+ *   INACTIVITY_LIFECYCLE_INBOX=controlled-inbox@example.com        (mail recipient; individual stages target this account)
+ *   SEED_BACKDATE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_BACKDATES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT
  *   SEED_DELETE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_DELETES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT
  *   EMAIL_* / APP_URL — same as production mail (see README)
  */
@@ -39,6 +40,8 @@ import { notifyAdminLifecycleFromScript } from "../services/adminLifecycleSocket
 import { buildInactivitySeedTimeline } from "./inactivitySeedTimeline";
 
 const PRODUCTION_CONFIRMATION = "I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION";
+const INBOX_BACKDATE_CONFIRMATION =
+  "I_UNDERSTAND_THIS_BACKDATES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT";
 const INBOX_DELETION_CONFIRMATION =
   "I_UNDERSTAND_THIS_DELETES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT";
 const EMAIL_DOMAIN = "localworks-inactivity.test";
@@ -153,12 +156,15 @@ const findLifecycleInboxAccount = async (email: string): Promise<LifecycleInboxA
   return matches[0];
 };
 
-const findLifecycleInboxStatus = async (account: LifecycleInboxAccount) => {
-  const deleted =
-    account.role === "worker"
-      ? await Worker.findById(account.id).select("status").lean()
-      : await Employer.findById(account.id).select("status").lean();
-  return deleted?.status;
+const findLifecycleInboxState = async (account: LifecycleInboxAccount) => {
+  if (account.role === "worker") {
+    return Worker.findById(account.id)
+      .select("status lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt")
+      .lean();
+  }
+  return Employer.findById(account.id)
+    .select("status lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt")
+    .lean();
 };
 
 const backdateLifecycleInboxAccount = async (
@@ -175,8 +181,8 @@ const backdateLifecycleInboxAccount = async (
     },
   };
   return account.role === "worker"
-    ? Worker.updateOne(filter, update)
-    : Employer.updateOne(filter, update);
+    ? Worker.updateOne(filter, update, { timestamps: false })
+    : Employer.updateOne(filter, update, { timestamps: false });
 };
 
 const RUN_MODE_FLAGS: { flag: string; mode: TourRunMode }[] = [
@@ -187,6 +193,16 @@ const RUN_MODE_FLAGS: { flag: string; mode: TourRunMode }[] = [
   { flag: "--run-deletion", mode: "deletion" },
   { flag: "--run-job", mode: "full" },
 ];
+
+const isIndividualWarningMode = (mode: TourRunMode) =>
+  mode === "warning-3" || mode === "warning-4" || mode === "warning-5";
+
+const warningMonthForMode = (mode: TourRunMode): 3 | 4 | 5 => {
+  if (mode === "warning-3") return 3;
+  if (mode === "warning-4") return 4;
+  if (mode === "warning-5") return 5;
+  throw new Error(`Mode ${mode} does not represent an individual warning.`);
+};
 
 const parseCli = (argv: string[]) => {
   const apply = argv.includes("--apply");
@@ -260,8 +276,9 @@ const printGuide = (tourFixtures: TourFixture[]) => {
   console.log("\n========== INACTIVITY EMAIL TOUR ==========\n");
   console.log(`INACTIVITY_LIFECYCLE_INBOX: ${LIFECYCLE_INBOX}`);
   console.log("  Lifecycle emails go here.");
-  console.log("  Warning runs and the full tour modify only @localworks-inactivity.test fixtures.");
-  console.log("  The deletion-only command targets the platform account matching this inbox address.\n");
+  console.log("  Individual 3/4/5-month warning commands backdate this configured platform account.");
+  console.log("  The full --run-job email tour modifies only @localworks-inactivity.test fixtures.");
+  console.log("  The deletion-only command permanently deletes the platform account matching this inbox address.\n");
   console.log("Expected after --apply --run-job (one monitor pass):");
   console.log("  1. 3-month inactivity warning");
   console.log("  2. 4-month reminder");
@@ -272,13 +289,16 @@ const printGuide = (tourFixtures: TourFixture[]) => {
     console.log(`  ${f.label}`);
     console.log(`    Email: ${tourEmail(f.key)}`);
   }
-  console.log("\nCommands (from backend/, SEED_CONFIRM_PRODUCTION + SEED_DEMO_PASSWORD in .env):");
+  console.log("\nCommands (run from backend/; write confirmation required):");
   console.log("  npm run seed:inactivity-email-3mo      → one 3-month warning");
   console.log("  npm run seed:inactivity-email-4mo      → one 4-month warning");
   console.log("  npm run seed:inactivity-email-5mo      → one 5-month final warning");
   console.log("  npm run seed:inactivity-email-deletion → backdate and delete the configured inbox account");
   console.log("  npm run seed:inactivity-email-tour -- --apply --run-job   → all four emails");
   console.log("  npm run seed:inactivity-email-tour -- --reset\n");
+  console.log(
+    `Warning-stage backdating also requires SEED_BACKDATE_LIFECYCLE_INBOX=${INBOX_BACKDATE_CONFIRMATION}.\n`,
+  );
   console.log(
     `Inbox deletion also requires SEED_DELETE_LIFECYCLE_INBOX=${INBOX_DELETION_CONFIRMATION}.\n`,
   );
@@ -323,7 +343,7 @@ const assertMonitorResult = async (
   },
   inboxAccount?: LifecycleInboxAccount,
 ) => {
-  if (mode !== "deletion" && result.processed < fixtures.length) {
+  if (!isIndividualWarningMode(mode) && mode !== "deletion" && result.processed < fixtures.length) {
     throw new Error(`Expected to process ${fixtures.length} tour worker(s), got ${result.processed}.`);
   }
   if (result.emailFailures > 0) {
@@ -332,7 +352,27 @@ const assertMonitorResult = async (
 
   if (mode === "warning-3" || mode === "warning-4" || mode === "warning-5") {
     if (result.deleted !== 0) throw new Error("Warning run must not delete any account.");
+    if (result.processed !== 1) {
+      throw new Error(`Expected to process exactly one configured inbox account, got ${result.processed}.`);
+    }
+    if (!inboxAccount) throw new Error("Missing preflighted lifecycle inbox account.");
+    const expectedStage = warningMonthForMode(mode);
+    const saved = await findLifecycleInboxState(inboxAccount);
+    if (
+      !saved ||
+      !isOperationalAccountStatus(saved.status) ||
+      saved.inactivityWarningStage !== expectedStage ||
+      !saved.lastInactivityNotificationAt ||
+      computeAdminLifecycle(saved) !== "inactive"
+    ) {
+      throw new Error(
+        `Expected the configured inbox account to remain operational, show inactive lifecycle, and persist warning stage ${expectedStage}; verify its database record and monitor logs.`,
+      );
+    }
     console.log(`\nDone. Check ${LIFECYCLE_INBOX} for: ${WARNING_EMAIL_HINT[mode]}.`);
+    console.log(
+      `Verified ${saved.email}: platform status ${saved.status}, lifecycle inactive, warning stage ${saved.inactivityWarningStage}.`,
+    );
     return;
   }
 
@@ -348,7 +388,7 @@ const assertMonitorResult = async (
     }
     if (mode === "deletion") {
       if (!inboxAccount) throw new Error("Missing preflighted lifecycle inbox account.");
-      if ((await findLifecycleInboxStatus(inboxAccount)) !== "deleted") {
+      if ((await findLifecycleInboxState(inboxAccount))?.status !== "deleted") {
         throw new Error("Configured lifecycle inbox account should be status deleted after the job.");
       }
       console.log(`\nDone. Check ${LIFECYCLE_INBOX} for the account-deleted email.`);
@@ -375,8 +415,23 @@ const run = async () => {
   if ((apply || reset) && process.env.SEED_CONFIRM_PRODUCTION !== PRODUCTION_CONFIRMATION) {
     throw new Error(`Writes require SEED_CONFIRM_PRODUCTION=${PRODUCTION_CONFIRMATION}.`);
   }
-  if (apply && mode !== "deletion" && password.length < 8) {
+  if (
+    apply &&
+    mode !== "deletion" &&
+    !isIndividualWarningMode(mode) &&
+    password.length < 8
+  ) {
     throw new Error("Set SEED_DEMO_PASSWORD (min 8 characters) for tour worker passwords.");
+  }
+  if (
+    apply &&
+    isIndividualWarningMode(mode) &&
+    (!CONFIGURED_LIFECYCLE_INBOX ||
+      process.env.SEED_BACKDATE_LIFECYCLE_INBOX !== INBOX_BACKDATE_CONFIRMATION)
+  ) {
+    throw new Error(
+      `Testing warning stages on the configured inbox account requires INACTIVITY_LIFECYCLE_INBOX and SEED_BACKDATE_LIFECYCLE_INBOX=${INBOX_BACKDATE_CONFIRMATION}.`,
+    );
   }
   if (
     apply &&
@@ -420,12 +475,13 @@ const run = async () => {
       return;
     }
 
-    const fixtures = mode === "deletion" ? [] : fixturesForMode(tourFixtures, mode);
+    const inboxStageMode = mode === "deletion" || isIndividualWarningMode(mode);
+    const fixtures = inboxStageMode ? [] : fixturesForMode(tourFixtures, mode);
     const modeLabel: Record<TourRunMode, string> = {
       "fixtures-only": "upsert all tour workers (no emails)",
-      "warning-3": "3-month warning email",
-      "warning-4": "4-month warning email",
-      "warning-5": "5-month final warning email",
+      "warning-3": `3-month warning for configured inbox account ${LIFECYCLE_INBOX}`,
+      "warning-4": `4-month warning for configured inbox account ${LIFECYCLE_INBOX}`,
+      "warning-5": `5-month final warning for configured inbox account ${LIFECYCLE_INBOX}`,
       warnings: "3 / 4 / 5 month warning emails (combined)",
       deletion: `6-month deletion of configured inbox account ${LIFECYCLE_INBOX} + email`,
       full: "full email tour (4 emails)",
@@ -434,7 +490,7 @@ const run = async () => {
 
     let inboxAccount: LifecycleInboxAccount | undefined;
     let jobUserIds: string[];
-    if (mode === "deletion") {
+    if (inboxStageMode) {
       inboxAccount = await findLifecycleInboxAccount(LIFECYCLE_INBOX);
       if (!isOperationalAccountStatus(inboxAccount.status)) {
         throw new Error(
@@ -442,14 +498,27 @@ const run = async () => {
         );
       }
 
-      const timeline = buildInactivitySeedTimeline(seedRef, DEACTIVATION_MONTHS);
+      const idleMonths = mode === "deletion" ? DEACTIVATION_MONTHS : warningMonthForMode(mode);
+      const timeline = buildInactivitySeedTimeline(seedRef, idleMonths);
       const updated = await backdateLifecycleInboxAccount(inboxAccount, timeline);
       if (updated.matchedCount !== 1) {
-        throw new Error("Lifecycle inbox account changed during preflight; no deletion was run.");
+        throw new Error("Lifecycle inbox account changed during preflight; no monitor run was started.");
+      }
+      const seededState = await findLifecycleInboxState(inboxAccount);
+      const seededAt = seededState ? inactivityPolicyEffectiveAt(seededState) : null;
+      if (
+        !seededState ||
+        !seededAt ||
+        wholeMonthsSince(seededAt, seedRef) !== idleMonths ||
+        seededState.inactivityWarningStage !== timeline.inactivityWarningStage
+      ) {
+        throw new Error(
+          "The configured inbox account's inactivity dates/stage did not persist as seeded; refusing to run the monitor.",
+        );
       }
       jobUserIds = [String(inboxAccount.id)];
       console.log(
-        `Backdated configured ${inboxAccount.role} account ${inboxAccount.email} to ${fmtShort(timeline.lastActiveAt)}; it will be deleted by the inactivity monitor.`,
+        `Seeded configured ${inboxAccount.role} account ${inboxAccount.email} to ${idleMonths} months idle, with warning stage ${timeline.inactivityWarningStage}; underlying status remains ${inboxAccount.status}.`,
       );
     } else {
       const passwordHash = await bcrypt.hash(password, 12);
@@ -494,7 +563,7 @@ const run = async () => {
     }
 
     console.log(
-      mode === "deletion"
+      inboxAccount
         ? "\nRunning inactivity monitor for the configured inbox account…"
         : "\nRunning inactivity monitor for tour workers…",
     );
@@ -514,8 +583,16 @@ const run = async () => {
       if (!saved) continue;
       const bucket = computeAdminLifecycle(saved);
       console.log(
-        `  After job: ${saved.email} → lifecycle "${bucket}", stage ${saved.inactivityWarningStage ?? 0}, last notice ${saved.lastInactivityNotificationAt?.toISOString() ?? "none"}`,
+        `  After job: ${saved.email} → platform status "${saved.status}", lifecycle "${bucket}", stage ${saved.inactivityWarningStage ?? 0}, last notice ${saved.lastInactivityNotificationAt?.toISOString() ?? "none"}`,
       );
+    }
+    if (inboxAccount) {
+      const saved = await findLifecycleInboxState(inboxAccount);
+      if (saved) {
+        console.log(
+          `  After job: ${inboxAccount.email} → platform status "${saved.status}", lifecycle "${computeAdminLifecycle(saved)}", stage ${saved.inactivityWarningStage ?? 0}, last notice ${saved.lastInactivityNotificationAt?.toISOString() ?? "none"}`,
+        );
+      }
     }
     await notifyAdminLifecycleFromScript();
   } finally {
