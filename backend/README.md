@@ -155,7 +155,7 @@ The backend schedules a job ~1 minute after startup, then **daily** (`scheduleAc
 
 ### Inactivity email testing (`seed:inactivity-email-*`)
 
-Use these to **send real SMTP mail** to **`INACTIVITY_LIFECYCLE_INBOX`** (default `joav.zabala.up@phinmaed.com`). Tour workers log in as `lifecycle-*@localworks-inactivity.test`; only the inbox address receives mail.
+Use these to **send real SMTP mail** to **`INACTIVITY_LIFECYCLE_INBOX`** (default `joav.zabala.up@phinmaed.com`). Tour workers log in as `lifecycle-*@localworks-inactivity.test`; the inbox is delivery-only and its platform account is never modified. Only the tour fixtures are backdated or deleted.
 
 This is separate from **`seed:inactivity`**, which seeds broader admin/UI demo accounts.
 

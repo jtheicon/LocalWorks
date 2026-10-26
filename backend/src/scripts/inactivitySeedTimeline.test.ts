@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildInactivitySeedTimeline,
-  inboxIdleMonthsForMode,
 } from "./inactivitySeedTimeline";
 import { DEACTIVATION_MONTHS } from "../services/inactivityPolicy";
 
@@ -34,11 +33,4 @@ test("6-month seed: stage 5 prior, deletion due on ref day", () => {
   assert.equal(tl.calendarMonthsIdle, DEACTIVATION_MONTHS);
   assert.equal(tl.inactivityWarningStage, 5);
   assert.equal(tl.emailDueAt.getMonth(), 9);
-});
-
-test("inbox sync mode matches npm scripts", () => {
-  assert.equal(inboxIdleMonthsForMode("warning-3"), 3);
-  assert.equal(inboxIdleMonthsForMode("warning-4"), 4);
-  assert.equal(inboxIdleMonthsForMode("warning-5"), 5);
-  assert.equal(inboxIdleMonthsForMode("deletion"), DEACTIVATION_MONTHS);
 });

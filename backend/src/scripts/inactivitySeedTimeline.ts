@@ -55,28 +55,3 @@ export const buildInactivitySeedTimeline = (
     createdAtBackdate: subtractCalendarMonths(ref, idleMonths + 3),
   };
 };
-
-export type EmailTourRunMode =
-  | "fixtures-only"
-  | "warning-3"
-  | "warning-4"
-  | "warning-5"
-  | "warnings"
-  | "deletion"
-  | "full";
-
-/** Calendar months to backdate INACTIVITY_LIFECYCLE_INBOX for each npm seed command. */
-export const inboxIdleMonthsForMode = (mode: EmailTourRunMode): number => {
-  if (mode === "warning-4") return 4;
-  if (mode === "warning-5") return 5;
-  if (mode === "deletion") return DEACTIVATION_MONTHS;
-  return 3;
-};
-
-export const expectedWarningStageAfterJob = (mode: EmailTourRunMode): number | null => {
-  if (mode === "warning-3") return 3;
-  if (mode === "warning-4") return 4;
-  if (mode === "warning-5") return 5;
-  if (mode === "deletion" || mode === "full") return DEACTIVATION_MONTHS;
-  return null;
-};

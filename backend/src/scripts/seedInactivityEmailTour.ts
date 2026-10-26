@@ -15,14 +15,13 @@
  * Env:
  *   SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION  (apply / reset)
  *   SEED_DEMO_PASSWORD=<min 8 chars>                                (apply)
- *   INACTIVITY_LIFECYCLE_INBOX=joav.zabala.up@phinmaed.com          (mail + sync Admin UI when this login exists)
+ *   INACTIVITY_LIFECYCLE_INBOX=joav.zabala.up@phinmaed.com          (mail recipient only; never modified)
  *   EMAIL_* / APP_URL — same as production mail (see README)
  */
 import mongoose, { Types } from "mongoose";
 import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import Worker from "../model/Worker";
-import Employer from "../model/Employer";
 import {
   DEACTIVATION_MONTHS,
   wholeMonthsSince,
@@ -34,12 +33,7 @@ import {
 } from "../services/inactivityPolicy";
 import { runInactivityMonitor } from "../services/inactivityMonitor";
 import { notifyAdminLifecycleFromScript } from "../services/adminLifecycleSocket";
-import {
-  buildInactivitySeedTimeline,
-  expectedWarningStageAfterJob,
-  inboxIdleMonthsForMode,
-  type EmailTourRunMode,
-} from "./inactivitySeedTimeline";
+import { buildInactivitySeedTimeline } from "./inactivitySeedTimeline";
 
 const PRODUCTION_CONFIRMATION = "I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION";
 const EMAIL_DOMAIN = "localworks-inactivity.test";
@@ -49,8 +43,6 @@ const TOUR_NS = "localworks-inactivity-email-tour";
 
 const oid = (key: string) =>
   new Types.ObjectId(createHash("md5").update(`${TOUR_NS}:${key}`).digest("hex").slice(0, 24));
-
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 type TourFixture = {
   key: string;
@@ -101,22 +93,6 @@ const buildTourFixtures = (ref = new Date()): TourFixture[] => {
       DEACTIVATION_MONTHS,
     ),
   ];
-};
-
-const logSeedClock = (ref: Date, mode: TourRunMode) => {
-  const idleMonths = inboxIdleMonthsForMode(mode as EmailTourRunMode);
-  const tl = buildInactivitySeedTimeline(ref, idleMonths);
-  console.log(
-    `\nSeed clock: today ${fmtShort(ref)} → ${idleMonths}-month step sets idle since ${fmtShort(tl.lastActiveAt)} (${tl.calendarMonthsIdle} calendar mo.)`,
-  );
-  console.log(
-    `  Email for this command due ~${fmtShort(tl.emailDueAt)} · stage before job ${tl.inactivityWarningStage}`,
-  );
-  if (tl.calendarMonthsIdle !== idleMonths) {
-    console.warn(
-      `  ⚠ Calendar month count ${tl.calendarMonthsIdle} !== ${idleMonths} (month-end edge); idle date still ${fmtShort(tl.lastActiveAt)}`,
-    );
-  }
 };
 
 const fmtShort = (d: Date) =>
@@ -186,105 +162,6 @@ const WARNING_EMAIL_HINT: Partial<Record<TourRunMode, string>> = {
 
 const tourEmail = (key: string) => `${key}@${EMAIL_DOMAIN}`;
 
-/**
- * If INACTIVITY_LIFECYCLE_INBOX matches a worker/employer, backdate that account so Admin shows
- * inactive monitoring (same clock as the tour step). Does not delete real accounts on deletion runs.
- */
-const syncInboxPlatformAccount = async (
-  ref: Date,
-  mode: TourRunMode,
-): Promise<{ id: string; role: "worker" | "employer" } | null> => {
-  const idleMonths = inboxIdleMonthsForMode(mode as EmailTourRunMode);
-  const tl = buildInactivitySeedTimeline(ref, idleMonths);
-  const inbox = LIFECYCLE_INBOX.trim();
-  if (!inbox) return null;
-
-  const rx = new RegExp(`^${escapeRegExp(inbox)}$`, "i");
-  const workerHit = await Worker.findOne({ email: rx }).select("_id email status").lean();
-  const employerHit = workerHit
-    ? null
-    : await Employer.findOne({ email: rx }).select("_id email status").lean();
-  const doc = workerHit ?? employerHit;
-  const role: "worker" | "employer" = workerHit ? "worker" : "employer";
-  if (!doc) {
-    console.log(
-      `\n  INACTIVITY_LIFECYCLE_INBOX (${inbox}): no worker/employer with this email — open a tour worker in Admin instead (lifecycle-${idleMonths}mo@${EMAIL_DOMAIN}).`,
-    );
-    return null;
-  }
-  if (doc.status === "deleted" || doc.status === "pending") {
-    console.log(`\n  Skipping inbox UI sync: ${inbox} has status "${doc.status}".`);
-    return null;
-  }
-
-  const M = role === "worker" ? Worker : Employer;
-  await M.collection.updateOne(
-    { _id: doc._id },
-    {
-      $set: {
-        lastActiveAt: tl.lastActiveAt,
-        updatedAt: tl.lastActiveAt,
-        createdAt: tl.createdAtBackdate,
-        inactivityWarningStage: tl.inactivityWarningStage,
-        lastInactivityNotificationAt: tl.lastInactivityNotificationAt,
-      },
-      $unset: { inactivityEmailOverride: "" },
-    },
-  );
-  console.log(
-    `\n  Synced ${role} "${inbox}" → idle since ${fmtShort(tl.lastActiveAt)} (${tl.calendarMonthsIdle} mo.) for ${idleMonths}-month seed (today ${fmtShort(ref)}).`,
-  );
-  return { id: String(doc._id), role };
-};
-
-const logAdminExpect = async (
-  id: string,
-  role: "worker" | "employer",
-  label: string,
-  expectStageAfter?: number | null,
-) => {
-  const saved =
-    role === "worker"
-      ? await Worker.findById(id)
-          .select("name email lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt status")
-          .lean()
-      : await Employer.findById(id)
-          .select("company owner email lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt status")
-          .lean();
-  if (!saved) return;
-  const row = saved as {
-    email?: string;
-    status?: string;
-    lastActiveAt?: Date | null;
-    updatedAt?: Date;
-    createdAt?: Date;
-    inactivityWarningStage?: number;
-    lastInactivityNotificationAt?: Date | null;
-  };
-  const bucket = computeAdminLifecycle({ ...row, status: row.status ?? "active" });
-  const basis = adminActivityReference(row).at;
-  const months = basis ? wholeMonthsSince(basis) : "n/a";
-  const stage = row.inactivityWarningStage ?? 0;
-  const stageDue =
-    basis && stage > 0 && stage < DEACTIVATION_MONTHS
-      ? fmtShort(scheduledActionDate(basis, stage))
-      : null;
-  const nextMo = nextInactivityMilestone({ ...row, status: row.status ?? "active" });
-  const nextDue =
-    basis && nextMo ? fmtShort(scheduledActionDate(basis, nextMo)) : null;
-  console.log(
-    `  Admin UI expect (${label}): ${row.email} → lifecycle "${bucket}", ~${months} calendar mo idle, warning stage ${stage}${stageDue ? ` (last stage due ~${stageDue})` : ""}${nextDue && nextMo ? ` · next ${nextMo}-mo due ~${nextDue}` : ""}`,
-  );
-  if (expectStageAfter != null && stage !== expectStageAfter) {
-    console.warn(
-      `    ⚠ Expected stage ${expectStageAfter} after job; DB has ${stage} (did the monitor run?)`,
-    );
-  }
-  if (basis) {
-    console.log(`    Idle since ${fmtShort(basis)} · last notice ${row.lastInactivityNotificationAt ? fmtShort(new Date(row.lastInactivityNotificationAt)) : "none"}`);
-  }
-};
-
 const buildWorkerDoc = (fixture: TourFixture, passwordHash: string) => ({
   _id: oid(fixture.key),
   name: fixture.name,
@@ -313,8 +190,8 @@ const buildWorkerDoc = (fixture: TourFixture, passwordHash: string) => ({
 const printGuide = (tourFixtures: TourFixture[]) => {
   console.log("\n========== INACTIVITY EMAIL TOUR ==========\n");
   console.log(`INACTIVITY_LIFECYCLE_INBOX: ${LIFECYCLE_INBOX}`);
-  console.log("  Mail goes here; if this email is a worker/employer login, --apply also backdates that account for Admin UI.");
-  console.log("(Tour logins stay @localworks-inactivity.test when inbox is a separate account.)\n");
+  console.log("  Lifecycle emails go here. This inbox account is never backdated, deleted, or otherwise modified.");
+  console.log("  Only the @localworks-inactivity.test tour fixtures are changed by this script.\n");
   console.log("Expected after --apply --run-job (one monitor pass):");
   console.log("  1. 3-month inactivity warning");
   console.log("  2. 4-month reminder");
@@ -421,8 +298,6 @@ const run = async () => {
     const seedRef = new Date();
     const tourFixtures = buildTourFixtures(seedRef);
     const tourIds = tourFixtures.map((f) => oid(f.key));
-    const stageAfterJob = expectedWarningStageAfterJob(mode as EmailTourRunMode);
-
     if (reset) {
       const { deletedCount } = await Worker.deleteMany({ _id: { $in: tourIds } });
       console.log(`Removed ${deletedCount} email-tour worker(s).`);
@@ -450,7 +325,6 @@ const run = async () => {
       full: "full email tour (4 emails)",
     };
     console.log(`\nMode: ${modeLabel[mode]}`);
-    logSeedClock(seedRef, mode);
 
     const passwordHash = await bcrypt.hash(password, 12);
     for (const fixture of fixtures) {
@@ -470,14 +344,6 @@ const run = async () => {
       );
     }
     console.log(`Upserted ${fixtures.length} tour worker(s); lifecycle mail → ${LIFECYCLE_INBOX}.`);
-
-    const inboxSync = await syncInboxPlatformAccount(
-      seedRef,
-      mode === "fixtures-only" ? "warning-3" : mode,
-    );
-    if (inboxSync) {
-      await logAdminExpect(inboxSync.id, inboxSync.role, "inbox account (before job)");
-    }
 
     for (const f of fixtures) {
       const saved = await Worker.findById(oid(f.key))
@@ -500,9 +366,6 @@ const run = async () => {
     }
 
     const jobUserIds = fixtures.map((f) => String(oid(f.key)));
-    if (inboxSync && mode !== "deletion") {
-      jobUserIds.push(inboxSync.id);
-    }
     console.log("\nRunning inactivity monitor for tour workers…");
     const result = await runInactivityMonitor({
       userIds: jobUserIds,
@@ -513,14 +376,6 @@ const run = async () => {
     );
 
     await assertMonitorResult(mode, fixtures, result);
-    if (inboxSync) {
-      await logAdminExpect(
-        inboxSync.id,
-        inboxSync.role,
-        mode === "deletion" ? "inbox account (not deleted)" : "inbox account after job",
-        mode === "deletion" ? null : stageAfterJob,
-      );
-    }
     for (const f of fixtures) {
       const saved = await Worker.findById(oid(f.key))
         .select("name email lastActiveAt inactivityWarningStage lastInactivityNotificationAt status")
