@@ -31,6 +31,7 @@ const EmployerSchema: Schema = new Schema({
   website: { type: String, default: "N/A" },
   owner: { type: String, default: "N/A" },
   email: { type: String, required: [true, "Email is required"], unique: [true, "Email is already in use"] },
+  inactivityEmailOverride: { type: String, trim: true },
   password: { type: String, required: [true, "Password is required"], select: false },
   phone: { type: String, required: [true, "Phone is required"] },
   industry: { type: Schema.Types.ObjectId, ref: 'Industry', required: [true, "Industry is required"] },

@@ -76,7 +76,51 @@ Preview (no writes): `npm run seed:demo`. Apply: `npm run seed:demo -- --apply`.
 
 ### `seed:inactivity` — inactivity policy demo
 
-Preview: `npm run seed:inactivity`. Apply: `npm run seed:inactivity -- --apply`. Reset: `npm run seed:inactivity -- --reset`. Optional: `--apply --run-job` runs the inactivity monitor once after seeding. Requires a **Construction** industry (created by `seed:demo` or on first server start).
+Preview: `npm run seed:inactivity`. Apply: `npm run seed:inactivity -- --apply`. Reset: `npm run seed:inactivity -- --reset`. Optional: `--apply --run-job` resets only the seeded overdue worker to its test state, then runs the monitor for only that worker so it will not deactivate unrelated accounts. This makes the email test repeatable. The seed keeps the worker's registered address at a reserved `.test` address and routes lifecycle emails to `INACTIVITY_DEMO_EMAIL` when set. This includes inactivity warnings, deactivation, request receipt, and admin decision notices; it will not overwrite or reuse an existing account email. For Gmail SMTP, set `EMAIL_USER` to the sender account and `EMAIL_PASS` to its Google App Password (not the account login password). Set `EMAIL_OWNER` to that Gmail address or a verified Gmail send-as alias, and `APP_URL` to the frontend origin so email links open the application. Requires a **Construction** industry (created by `seed:demo` or on first server start).
+Applying the seed also refreshes the dedicated active worker login: `worker-active@localworks-inactivity.test`, using the password in `SEED_DEMO_PASSWORD`. Use the **Worker** login tab. This is separate from `INACTIVITY_DEMO_EMAIL`, which is only the lifecycle notification inbox, and from the already-overdue worker that is deactivated to test reactivation.
+
+#### Six-month deactivation and reactivation email test
+
+This scenario uses a separate demo worker; it does not register your Gmail address as a worker or change the existing Gmail account. Set a new temporary `SEED_DEMO_PASSWORD` (do not reuse a password shared in chat), set `INACTIVITY_DEMO_EMAIL` to a mailbox you control, and make sure the sender uses a valid Gmail App Password. In PowerShell, from `backend\`:
+
+```powershell
+$env:INACTIVITY_DEMO_EMAIL = '<your inbox>'
+$env:SEED_DEMO_PASSWORD = '<new temporary demo password>'
+$env:SEED_CONFIRM_PRODUCTION = 'I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION'
+$env:APP_URL = 'http://localhost:8080'
+npm run seed:inactivity
+```
+
+Check the preview and verify `MONGO_URI` in the local environment targets a **test database**. Then execute:
+
+```powershell
+npm run seed:inactivity -- --apply --run-job
+```
+
+The job resets and processes only `worker-due-deactivation@localworks-inactivity.test`, whose last qualifying activity is six calendar months old. Success should report `processed=1, deactivated=1, emailFailures=0`. Check the mailbox (and spam folder) for the message with the one-time reactivation-request link. Worker login for this demo address should return `ACCOUNT_DEACTIVATED` until reactivated; login itself does not send the request link. Open the email link, submit the request, then approve Mika DueDeactivation under **Admin dashboard → Reactivation requests**. After approval, sign in with the demo email and the temporary seed password. `--apply --run-job` can be rerun to resend a fresh link; each rerun resets only this fixture and invalidates its prior unused link.
+
+To test with an existing worker account instead of the reserved demo address, set `INACTIVITY_DEMO_ACCOUNT_EMAIL` to that worker's email and preview the target first:
+
+```powershell
+$env:INACTIVITY_DEMO_ACCOUNT_EMAIL = 'your-worker-email@example.com'
+$env:INACTIVITY_DEMO_EMAIL = 'your-notification-inbox@example.com'
+npm run seed:inactivity -- --use-email-account
+```
+
+Verify the preview names the intended worker, and confirm `MONGO_URI` is the intended test database. Applying this test changes that worker's inactivity/deactivation fields but does not change its password. It temporarily sets the worker active with a six-month-old activity timestamp, immediately runs the inactivity monitor for that worker only, then sends the reactivation link to `INACTIVITY_DEMO_EMAIL`. It refuses deleted, pending, and admin-deactivated accounts. Only proceed for a worker account you own:
+
+```powershell
+$env:SEED_CONFIRM_PRODUCTION = 'I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION'
+npm run seed:inactivity -- --apply --run-job --use-email-account
+```
+
+Expected result: `processed=1, deactivated=1, emailFailures=0`. The selected worker must be blocked from new login until an admin approves the reactivation request. The email contains the one-time reactivation request link; signing in does not trigger a new link.
+
+To refresh only the demo fixtures and active worker password without running the deactivation test, use `npm run seed:inactivity -- --apply`. Then verify the credentials against the same database used by the frontend API with `npm run seed:inactivity -- --check-login`. Set `WORKER_LOGIN_EMAIL` to check a different worker address; by default it checks `worker-active@localworks-inactivity.test`. The check is read-only and reports whether the account exists, is eligible to log in, and its password matches `SEED_DEMO_PASSWORD`; it never prints the password or hash.
+
+Use `WORKER_LOGIN_EMAIL=<address> npm run seed:inactivity -- --inspect-account` to read-only inspect whether the configured database has that email under a worker or employer account and report its status. Deleted accounts cannot log in. Re-registering a deleted email requires the normal worker signup flow, including email verification and a valid resume; the old soft-deleted history remains archived.
+
+After the worker submits the email link, an administrator can review the request under **Admin dashboard → Reactivation requests**, then approve or reject it. The seed also creates an already-pending example for previewing that screen without sending an email.
 
 ## Cross-origin authentication
 

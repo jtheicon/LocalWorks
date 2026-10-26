@@ -15,6 +15,7 @@ import {
   sendDeactivationEmail,
   sendInactivityWarningEmail,
   notifyAdminDeactivation,
+  accountLifecycleEmail,
 } from "./inactivityEmails";
 import ReactivationToken from "../model/ReactivationToken";
 import { hashReactivationToken, issueReactivationToken } from "./reactivationTokens";
@@ -83,14 +84,22 @@ const adminNotify = async (title: string, description: string) => {
   });
 };
 
-const processUser = async (doc: any, role: Role, M: Model<any>) => {
-  if (!isEligibleForInactivityAutomation(doc)) return { deactivated: false, changed: false };
+const processUser = async (
+  doc: any,
+  role: Role,
+  M: Model<any>,
+  emailRecipient?: string,
+) => {
+  if (!isEligibleForInactivityAutomation(doc)) {
+    return { deactivated: false, changed: false, emailFailed: false };
+  }
 
   const effectiveAt = inactivityPolicyEffectiveAt(doc);
-  if (!effectiveAt) return { deactivated: false, changed: false };
+  if (!effectiveAt) return { deactivated: false, changed: false, emailFailed: false };
 
   const months = wholeMonthsSince(effectiveAt);
   const stage: number = doc.inactivityWarningStage ?? 0;
+  let warningEmailFailed = false;
 
   const sendWarning = async (warnMonth: WarningMonth) => {
     const updated = await M.findOneAndUpdate(
@@ -111,9 +120,14 @@ const processUser = async (doc: any, role: Role, M: Model<any>) => {
     if (!updated) return false;
     const name = updated.name ?? updated.company ?? "there";
     try {
-      await sendInactivityWarningEmail(updated.email, name, warnMonth);
+      await sendInactivityWarningEmail(
+        emailRecipient ?? accountLifecycleEmail(updated.email, updated.get("inactivityEmailOverride")),
+        name,
+        warnMonth,
+      );
     } catch (err) {
       console.error("[inactivity] warning email failed:", err);
+      warningEmailFailed = true;
       await M.updateOne(
         { _id: doc._id, inactivityWarningStage: warnMonth },
         {
@@ -138,7 +152,7 @@ const processUser = async (doc: any, role: Role, M: Model<any>) => {
         role,
       });
     }
-    return { deactivated: false, changed: sent };
+    return { deactivated: false, changed: sent, emailFailed: warningEmailFailed };
   } else if (months >= 4 && stage < 4) {
     const sent = await sendWarning(4);
     if (sent) {
@@ -147,7 +161,7 @@ const processUser = async (doc: any, role: Role, M: Model<any>) => {
         role,
       });
     }
-    return { deactivated: false, changed: sent };
+    return { deactivated: false, changed: sent, emailFailed: warningEmailFailed };
   } else if (months >= 3 && stage < 3) {
     const sent = await sendWarning(3);
     if (sent) {
@@ -156,9 +170,9 @@ const processUser = async (doc: any, role: Role, M: Model<any>) => {
         role,
       });
     }
-    return { deactivated: false, changed: sent };
+    return { deactivated: false, changed: sent, emailFailed: warningEmailFailed };
   } else if (months < DEACTIVATION_MONTHS || stage >= DEACTIVATION_MONTHS) {
-    return { deactivated: false, changed: false };
+    return { deactivated: false, changed: false, emailFailed: false };
   }
 
   let reactivationUrl = `${appOrigin()}/account/reactivation/request`;
@@ -169,7 +183,7 @@ const processUser = async (doc: any, role: Role, M: Model<any>) => {
     reactivationUrl = `${appOrigin()}/account/reactivation/request?token=${encodeURIComponent(issued.raw)}`;
   } catch (err) {
     console.error("[inactivity] reactivation token failed:", err);
-    return { deactivated: false, changed: false };
+    return { deactivated: false, changed: false, emailFailed: false };
   }
 
   const deactivatedDoc = await M.findOneAndUpdate(
@@ -200,14 +214,23 @@ const processUser = async (doc: any, role: Role, M: Model<any>) => {
     if (tokenRaw) {
       await ReactivationToken.deleteMany({ tokenHash: hashReactivationToken(tokenRaw) });
     }
-    return { deactivated: false, changed: false };
+    return { deactivated: false, changed: false, emailFailed: false };
   }
 
   const name = deactivatedDoc.name ?? deactivatedDoc.company ?? "User";
+  let deactivationEmailFailed = false;
   try {
-    await sendDeactivationEmail(deactivatedDoc.email, name, reactivationUrl);
+    await sendDeactivationEmail(
+      emailRecipient ?? accountLifecycleEmail(
+        deactivatedDoc.email,
+        deactivatedDoc.get("inactivityEmailOverride"),
+      ),
+      name,
+      reactivationUrl,
+    );
   } catch (err) {
     console.error("[inactivity] deactivation email failed:", err);
+    deactivationEmailFailed = true;
   }
 
   const label = `${name} (${role}, ${deactivatedDoc.email})`;
@@ -219,29 +242,36 @@ const processUser = async (doc: any, role: Role, M: Model<any>) => {
     );
   }
 
-  return { deactivated: true, changed: true };
+  return { deactivated: true, changed: true, emailFailed: deactivationEmailFailed };
 };
 
-export const runInactivityMonitor = async () => {
+export const runInactivityMonitor = async (options?: {
+  userIds?: string[];
+  emailRecipient?: string;
+}) => {
   const started = now();
   let processed = 0;
   let deactivated = 0;
+  let emailFailures = 0;
+  const userFilter = options?.userIds ? { _id: { $in: options.userIds } } : {};
 
   for (const [role, M] of MODELS) {
     const users = await M.find({
       status: { $in: ["active", "verified"] },
       lastActiveAt: { $exists: true },
+      ...userFilter,
     })
       .select(
-        "name company email lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt status",
+        "name company email lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt inactivityEmailOverride status",
       )
       .lean();
 
     for (const doc of users) {
       try {
         processed += 1;
-        const result = await processUser(doc, role, M);
+        const result = await processUser(doc, role, M, options?.emailRecipient);
         if (result.deactivated) deactivated += 1;
+        if (result.emailFailed) emailFailures += 1;
       } catch (err) {
         console.error("[inactivity] user processing failed:", doc._id, err);
       }
@@ -255,7 +285,7 @@ export const runInactivityMonitor = async () => {
   if (processed > 0) {
     emitAdminUserLifecycleUpdated("inactivity_job");
   }
-  return { processed, deactivated };
+  return { processed, deactivated, emailFailures };
 };
 
 /** @deprecated alias */

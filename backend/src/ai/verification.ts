@@ -136,6 +136,7 @@ export const ask = async <T extends z.ZodType>(system: string, parts: Part[], sc
     config: {
       systemInstruction: system,
       temperature: 0, // same document -> same verdict
+      maxOutputTokens: 512,
       responseMimeType: "application/json",
       responseJsonSchema: toGeminiSchema(schema),
     },

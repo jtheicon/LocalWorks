@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { CheckCircle2 } from "lucide-react";
 import axios from "axios";
 import { useToast } from "@/components/ui/use-toast";
+import { API_ORIGIN } from "@/lib/apiOrigin";
 
 interface OTPVerificationProps {
   email: string;
@@ -76,15 +77,19 @@ const OTPVerification = ({ email, purpose, role, onVerified, onResend }: OTPVeri
 
     setIsVerifying(true);
     try {
-      const res = await axios.post("http://localhost:8920/api/auth/otp/verify", {
+      const res = await axios.post(`${API_ORIGIN}/api/auth/otp/verify`, {
         email,
         otp: otpValue,
         purpose,
       });
       setIsVerified(true);
       onVerified(res.data.token);
-    } catch (err: any) {
-      setError(err?.response?.data?.info || "Failed to verify OTP");
+    } catch (err: unknown) {
+      setError(
+        axios.isAxiosError<{ info?: string }>(err)
+          ? err.response?.data?.info || "Failed to verify OTP"
+          : err instanceof Error ? err.message : "Failed to verify OTP",
+      );
     } finally {
       setIsVerifying(false);
     }
@@ -102,13 +107,15 @@ const OTPVerification = ({ email, purpose, role, onVerified, onResend }: OTPVeri
 
     try {
       const url = purpose === "password_reset"
-        ? `http://localhost:8920/api/auth/otp/${email}/${role}`
-        : `http://localhost:8920/api/auth/otp/${email}`;
+        ? `${API_ORIGIN}/api/auth/otp/${encodeURIComponent(email)}/${role}`
+        : `${API_ORIGIN}/api/auth/otp/${encodeURIComponent(email)}`;
       await axios.get(url);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: "Error",
-        description: err?.response?.data?.info || "Failed to Resend OTP.",
+        description: axios.isAxiosError<{ info?: string }>(err)
+          ? err.response?.data?.info || "Failed to Resend OTP."
+          : err instanceof Error ? err.message : "Failed to Resend OTP.",
         variant: "destructive",
       });
       return;

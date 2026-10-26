@@ -42,6 +42,7 @@ export interface IWorker extends Document {
 const WorkerSchema: Schema = new Schema({
   name: { type: String, required: [true, "First name is required"], unique: [true, "Name is already in use"] },
   email: { type: String, required: [true, "Email is required"], unique: [true, "Email is already in use"] },
+  inactivityEmailOverride: { type: String, trim: true },
   password: { type: String, required: [true, "Password is required"] },
   phoneNumber: { type: String, required: [true, "Phone Number is required"], default: "" },
   role: { type: String, enum: ["worker", "employer", "admin"], default: "worker" },

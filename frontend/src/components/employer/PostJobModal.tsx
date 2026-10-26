@@ -369,7 +369,6 @@ const PostJobModal = ({ open, onOpenChange, job = null }: PostJobModalProps) => 
                     <SelectItem value="Full-Time">Full-Time</SelectItem>
                     <SelectItem value="Part-Time">Part-Time</SelectItem>
                     <SelectItem value="Contract">Contract</SelectItem>
-                    <SelectItem value="Temporary">Temporary</SelectItem>
                     <SelectItem value="Intern">Intern</SelectItem>
                   </SelectContent>
                 </Select>

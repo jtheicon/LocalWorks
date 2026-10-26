@@ -15,6 +15,7 @@ import {
   sendReactivationApprovedEmail,
   sendReactivationRejectedEmail,
   notifyAdminReactivationRequest,
+  accountLifecycleEmail,
 } from "../services/inactivityEmails";
 import { resetInactivityCycleOnReactivation } from "../services/activityTracking";
 import { userModelByRole } from "../services/userModelByRole";
@@ -119,7 +120,10 @@ export const SubmitReactivationRequest = async (req: Request, res: Response) => 
   await consumeReactivationToken(validation.tokenId);
 
   const name = updated.get("name") ?? updated.get("company") ?? "User";
-  await sendReactivationSubmittedEmail(updated.email, name);
+  await sendReactivationSubmittedEmail(
+    accountLifecycleEmail(updated.email, updated.get("inactivityEmailOverride")),
+    name,
+  );
 
   const label = `${name} (${validation.role}, ${updated.email})`;
   await AdminNotification.create({
@@ -287,7 +291,10 @@ export const AdminApproveReactivation = async (req: Request, res: Response) => {
 
   await resetInactivityCycleOnReactivation(role, userId, req.user?.id);
   const name = user.get("name") ?? user.get("company") ?? "User";
-  await sendReactivationApprovedEmail(user.email, name);
+  await sendReactivationApprovedEmail(
+    accountLifecycleEmail(user.email, user.get("inactivityEmailOverride")),
+    name,
+  );
 
   emitAdminUserLifecycleUpdated("reactivation", { userId, role });
 
@@ -328,7 +335,12 @@ export const AdminRejectReactivation = async (req: Request, res: Response) => {
       console.error("[reactivation] failed to issue token after reject:", err);
     }
   }
-  await sendReactivationRejectedEmail(user.email, name, reason, reactivationUrl);
+  await sendReactivationRejectedEmail(
+    accountLifecycleEmail(user.email, user.get("inactivityEmailOverride")),
+    name,
+    reason,
+    reactivationUrl,
+  );
 
   emitAdminUserLifecycleUpdated("reactivation", { userId, role });
 
@@ -353,7 +365,10 @@ export const AdminManualReactivate = async (req: Request, res: Response) => {
   }
 
   const name = user.get("name") ?? user.get("company") ?? "User";
-  await sendReactivationApprovedEmail(user.email, name);
+  await sendReactivationApprovedEmail(
+    accountLifecycleEmail(user.email, user.get("inactivityEmailOverride")),
+    name,
+  );
 
   emitAdminUserLifecycleUpdated("reactivation", { userId, role });
 

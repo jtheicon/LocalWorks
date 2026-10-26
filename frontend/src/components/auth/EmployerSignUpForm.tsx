@@ -18,6 +18,7 @@ import { matchOption, toEmail, toLocalMobile, toPlainText } from "./autofill";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
+import { API_ORIGIN } from "@/lib/apiOrigin";
 
 interface EmployerSignUpFormProps {
   onClose: () => void;
@@ -72,7 +73,7 @@ const Register = async () => {
 
   // The permit itself was already uploaded and verified in step 1.
   await axios.post(
-    "http://localhost:8920/api/auth/employer/register",
+    `${API_ORIGIN}/api/auth/employer/register`,
     {
       company: formData.company,
       email: formData.email,
@@ -106,7 +107,7 @@ const Register = async () => {
 };
 
   const IndustryInfo = async () => {
-    const result = await axios.get("http://localhost:8920/api/auth/dropdown", { withCredentials: true })
+    const result = await axios.get(`${API_ORIGIN}/api/auth/dropdown`, { withCredentials: true })
     return result.data
   }
 
@@ -170,13 +171,15 @@ const Register = async () => {
     setIsButtonDisabled(true);
 
     try {
-      await axios.get(`http://localhost:8920/api/auth/otp/${formData.email}`)
-    } catch (error: any) {
+      await axios.get(`${API_ORIGIN}/api/auth/otp/${encodeURIComponent(formData.email)}`)
+    } catch (error: unknown) {
       setStep("form");
       setIsButtonDisabled(false);
       toast({
         title: "OTP Failed",
-        description: error?.response?.data?.info || "Failed to send OTP",
+        description: axios.isAxiosError<{ info?: string }>(error)
+          ? error.response?.data?.info || "Failed to send OTP"
+          : error instanceof Error ? error.message : "Failed to send OTP",
         variant: "destructive",
       });
     }

@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
 import { useToast } from "@/components/ui/use-toast";
+import { API_ORIGIN } from "@/lib/apiOrigin";
 
 axios.defaults.withCredentials = true;
 
@@ -105,9 +106,7 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
 
   // Fetch skill categories
   const fetchSkills = async () => {
-    const result = await axios.get(
-      "http://localhost:8920/api/auth/ViewSkills"
-    );
+    const result = await axios.get(`${API_ORIGIN}/api/auth/ViewSkills`);
     return result.data;
   };
 
@@ -263,13 +262,15 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
     setIsButtonDisabled(true);
 
     try {
-      await axios.get(`http://localhost:8920/api/auth/otp/${formData.email}`)
-    } catch (error: any) {
+      await axios.get(`${API_ORIGIN}/api/auth/otp/${encodeURIComponent(formData.email)}`)
+    } catch (error: unknown) {
       setStep("form");
       setIsButtonDisabled(false);
       toast({
         title: "OTP Failed",
-        description: error?.response?.data?.info || "Failed to send OTP",
+        description: axios.isAxiosError<{ info?: string }>(error)
+          ? error.response?.data?.info || "Failed to send OTP"
+          : error instanceof Error ? error.message : "Failed to send OTP",
         variant: "destructive",
       });
     }
@@ -319,7 +320,7 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
       formDataToSend.append("emailToken", emailToken);
 
       const response = await axios.post(
-        "http://localhost:8920/api/auth/worker/register",
+        `${API_ORIGIN}/api/auth/worker/register`,
         formDataToSend,
         {
           withCredentials: true,
@@ -335,14 +336,14 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
       });
 
       onClose();
-    } catch (error: any) {
-      if (error.response) {
+    } catch (error: unknown) {
+      if (axios.isAxiosError<{ message?: string }>(error) && error.response) {
         toast({
           title: "Registration Failed",
-          description: error.response.data.message,
+          description: error.response.data.message || "Could not create your account.",
           variant: "destructive",
         });
-      } else if (error.request) {
+      } else if (axios.isAxiosError(error) && error.request) {
         toast({
           title: "Server Error",
           description: "No response from the server.",
@@ -351,7 +352,7 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
       } else {
         toast({
           title: "Error",
-          description: error.message,
+          description: error instanceof Error ? error.message : "Could not create your account.",
           variant: "destructive",
         });
       }

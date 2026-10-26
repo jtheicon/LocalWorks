@@ -1,6 +1,9 @@
 import { sendEmail } from "./emailOtp";
 import { DEACTIVATION_MONTHS } from "./inactivityPolicy";
 
+export const accountLifecycleEmail = (accountEmail: string, override?: string | null) =>
+  override?.trim() || accountEmail;
+
 const appOrigin = () => {
   const fromEnv = process.env.APP_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");

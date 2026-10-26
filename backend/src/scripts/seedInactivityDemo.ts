@@ -1,19 +1,27 @@
 /**
  * Demo fixtures for account inactivity, warnings, deactivation, and reactivation.
  *
- * All accounts use emails @localworks-inactivity.test and deterministic IDs so the
+ * Accounts use @localworks-inactivity.test by default and deterministic IDs so the
  * script is idempotent (--apply only inserts missing docs) and reversible (--reset).
+ * INACTIVITY_DEMO_EMAIL routes the overdue worker's deactivation email to a test inbox;
+ * it is never used as the seeded account's registered email.
  *
  * Usage (from backend/):
  *   npm run seed:inactivity                         preview
  *   npm run seed:inactivity -- --apply              write to DB
  *   npm run seed:inactivity -- --reset              remove demo docs only
  *   npm run seed:inactivity -- --apply --run-job    seed then run inactivity monitor once
+ *   npm run seed:inactivity -- --check-login         verify demo worker login without changing DB
+ *   npm run seed:inactivity -- --inspect-account     inspect a worker/employer account without changing DB
+ *   npm run seed:inactivity -- --use-email-account   preview lifecycle test for INACTIVITY_DEMO_ACCOUNT_EMAIL
+ *   npm run seed:inactivity -- --use-email-account   preview lifecycle test for INACTIVITY_DEMO_ACCOUNT_EMAIL
  *
  * Required for --apply / --reset:
  *   SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION
  * Required for --apply:
  *   SEED_DEMO_PASSWORD=<min 8 chars, shared by all demo logins>
+ * Optional:
+ *   INACTIVITY_DEMO_EMAIL=<inbox for the deactivation email>
  */
 import mongoose, { Model, Types } from "mongoose";
 import { createHash } from "node:crypto";
@@ -36,6 +44,8 @@ import { runInactivityMonitor } from "../services/inactivityMonitor";
 
 const PRODUCTION_CONFIRMATION = "I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION";
 const EMAIL_DOMAIN = "localworks-inactivity.test";
+const DEMO_DUE_ACCOUNT_EMAIL = `worker-due-deactivation@${EMAIL_DOMAIN}`;
+const inactivityDemoEmailRecipient = process.env.INACTIVITY_DEMO_EMAIL?.trim();
 /** Printed in the demo guide; maps to deactivated worker "elena". */
 export const DEMO_REACTIVATION_TOKEN = "localworks-demo-reactivate-token-v1";
 
@@ -68,6 +78,7 @@ const FIXTURES: FixtureMeta[] = [
   { key: "worker-inactive-3", role: "worker", label: "Inactive ~3 months (due 3-mo warning on next job run)", email: `worker-inactive-3@${EMAIL_DOMAIN}` },
   { key: "worker-inactive-4", role: "worker", label: "Inactive ~4 months (3-mo warning already sent)", email: `worker-inactive-4@${EMAIL_DOMAIN}` },
   { key: "worker-inactive-5", role: "worker", label: "Inactive ~5 months (4 & 5-mo reminders sent)", email: `worker-inactive-5@${EMAIL_DOMAIN}` },
+  { key: "worker-due-deactivation", role: "worker", label: "Active, due for deactivation (6 months inactive)", email: DEMO_DUE_ACCOUNT_EMAIL },
   { key: "worker-deactivated", role: "worker", label: "Deactivated (6+ months inactivity)", email: `worker-deactivated@${EMAIL_DOMAIN}` },
   { key: "worker-reactivation-pending", role: "worker", label: "Deactivated + pending reactivation request", email: `worker-reactivation-pending@${EMAIL_DOMAIN}` },
   { key: "worker-legacy", role: "worker", label: "Legacy (no lastActiveAt — excluded from auto job)", email: `worker-legacy@${EMAIL_DOMAIN}` },
@@ -141,6 +152,18 @@ const buildDocuments = (passwordHash: string, industryId: Types.ObjectId) => {
       lastActiveAt: monthsAgo(5),
       inactivityWarningStage: 5,
       lastInactivityNotificationAt: monthsAgo(4),
+    }),
+    baseWorker("worker-due-deactivation", "Mika DueDeactivation", {
+      email: DEMO_DUE_ACCOUNT_EMAIL,
+      ...(inactivityDemoEmailRecipient
+        ? { inactivityEmailOverride: inactivityDemoEmailRecipient }
+        : {}),
+      status: "active",
+      lastActiveAt: monthsAgo(DEACTIVATION_MONTHS),
+      updatedAt: monthsAgo(DEACTIVATION_MONTHS),
+      createdAt: monthsAgo(DEACTIVATION_MONTHS + 1),
+      inactivityWarningStage: Math.max(0, DEACTIVATION_MONTHS - 1),
+      lastInactivityNotificationAt: monthsAgo(Math.max(1, DEACTIVATION_MONTHS - 1)),
     }),
     baseWorker("worker-deactivated", "Elena Deactivated", {
       status: "not_active",
@@ -231,10 +254,14 @@ const buildDocuments = (passwordHash: string, industryId: Types.ObjectId) => {
 const printShowcaseGuide = (password: string) => {
   const origin = appOrigin();
   console.log("\n========== INACTIVITY DEMO GUIDE ==========\n");
+  console.log("Worker login test (active account):");
+  console.log(`  Email: worker-active@${EMAIL_DOMAIN}`);
+  console.log(`  Password: ${password ? "(set in SEED_DEMO_PASSWORD)" : "(preview only)"}`);
+  console.log("  Sign in with the Worker tab. Gmail is only used as the lifecycle notification inbox.\n");
   console.log("Admin (use your real admin login):");
   console.log(`  ${origin}/admin-dashboard`);
-  console.log("  • User management → filter Active / Inactive / Deactivated");
-  console.log("  • Reactivation tab → approve/reject Felix PendingReview\n");
+  console.log("  • Reactivation requests → approve/reject the request from Mika DueDeactivation");
+  console.log("  • User management → filter Active / Inactive / Deactivated\n");
 
   console.log("Demo worker logins (password from SEED_DEMO_PASSWORD):");
   for (const f of FIXTURES.filter((x) => x.role === "worker")) {
@@ -243,16 +270,23 @@ const printShowcaseGuide = (password: string) => {
   }
   console.log(`  Password: ${password ? "(set in SEED_DEMO_PASSWORD)" : "(preview only)"}\n`);
 
-  console.log("Try logging in as worker-deactivated@… → expect ACCOUNT_DEACTIVATED (403).\n");
+  console.log("Six-month deactivation test:");
+  console.log(`  Login email: worker-due-deactivation@${EMAIL_DOMAIN}`);
+  console.log(`  Password: ${password ? "(set in SEED_DEMO_PASSWORD)" : "(preview only)"}`);
+  console.log("  Before admin approval, Worker login should return ACCOUNT_DEACTIVATED (403).");
+  console.log("  The reactivation link is sent to INACTIVITY_DEMO_EMAIL when the seed runs --run-job.");
+  console.log("  Open that link in the email and submit the request, then approve it in the admin dashboard.");
+  console.log("  After approval, the same worker email/password can log in.\n");
+  console.log("Login does not send a new reactivation email; the secure request link is sent at deactivation.\n");
 
   console.log("Reactivation link (Elena Deactivated):");
   console.log(
     `  ${origin}/account/reactivation/request?token=${encodeURIComponent(DEMO_REACTIVATION_TOKEN)}\n`,
   );
 
-  console.log("Run inactivity job manually (dev):");
-  console.log("  POST /api/admin/inactivity/run  (admin cookie, or ALLOW_MANUAL_INACTIVITY_JOB in prod)");
-  console.log("  Or: npm run seed:inactivity -- --apply --run-job\n");
+  console.log("Run this repeatable test from backend/ (verify MONGO_URI points to a test database first):");
+  console.log("  npm run seed:inactivity");
+  console.log("  npm run seed:inactivity -- --apply --run-job\n");
 
   console.log("Expected lifecycle (policy effective date, computed now):");
   const docs = buildDocuments("x", oid("industry:placeholder"));
@@ -279,14 +313,38 @@ const run = async (): Promise<void> => {
   const apply = process.argv.includes("--apply");
   const reset = process.argv.includes("--reset");
   const runJob = process.argv.includes("--run-job");
+  const checkLogin = process.argv.includes("--check-login");
+  const inspectAccount = process.argv.includes("--inspect-account");
+  const useEmailAccount = process.argv.includes("--use-email-account");
   const password = process.env.SEED_DEMO_PASSWORD ?? "";
+  const targetEmail = process.env.INACTIVITY_DEMO_ACCOUNT_EMAIL?.trim().toLowerCase();
+  const loginEmail =
+    process.env.WORKER_LOGIN_EMAIL?.trim().toLowerCase() || `worker-active@${EMAIL_DOMAIN}`;
 
-  if (apply && reset) throw new Error("Use either --apply or --reset, not both.");
+  if (Number(apply) + Number(reset) + Number(checkLogin) + Number(inspectAccount) > 1) {
+    throw new Error("Use only one of --apply, --reset, --check-login, or --inspect-account.");
+  }
+  if (useEmailAccount && reset) throw new Error("--use-email-account cannot be combined with --reset.");
+  if ((checkLogin || inspectAccount) && runJob) {
+    throw new Error("--check-login and --inspect-account cannot be combined with --run-job.");
+  }
+  if (useEmailAccount && !targetEmail) {
+    throw new Error("Set INACTIVITY_DEMO_ACCOUNT_EMAIL to the worker account email you explicitly want to use.");
+  }
+  if (useEmailAccount && !runJob) {
+    console.log("Previewing the requested email-account lifecycle target. No database changes will be made.");
+  }
+  if (useEmailAccount && apply && !runJob) {
+    throw new Error("Use --apply --run-job together with --use-email-account; otherwise the command only previews.");
+  }
+  if (useEmailAccount && runJob && !apply) {
+    throw new Error("Applying an existing account lifecycle test requires --apply.");
+  }
   if (!mongoUri) throw new Error("MONGO_URI is required. Load env with dotenvx (see npm run seed:inactivity).");
   if ((apply || reset) && process.env.SEED_CONFIRM_PRODUCTION !== PRODUCTION_CONFIRMATION) {
     throw new Error(`Database writes require SEED_CONFIRM_PRODUCTION=${PRODUCTION_CONFIRMATION}.`);
   }
-  if (apply && password.length < 8) {
+  if (((apply && !useEmailAccount) || checkLogin) && password.length < 8) {
     throw new Error("Set SEED_DEMO_PASSWORD (min 8 characters) for demo account passwords.");
   }
 
@@ -295,6 +353,131 @@ const run = async (): Promise<void> => {
   await mongoose.connect(mongoUri);
 
   try {
+    if (useEmailAccount) {
+      const escapedEmail = targetEmail!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const target = await Worker.findOne({
+        email: { $regex: `^${escapedEmail}$`, $options: "i" },
+      }).select("_id email role status deactivation");
+
+      if (!target) {
+        throw new Error(`No worker account found for ${targetEmail} in the configured database.`);
+      }
+      if (target.status === "deleted" || target.status === "pending") {
+        throw new Error(`Refusing lifecycle test for a ${target.status} worker account. Only an active or already inactivity-deactivated worker is allowed.`);
+      }
+      if (
+        target.status === "not_active" &&
+        target.get("deactivation")?.reason !== "inactivity"
+      ) {
+        throw new Error("Refusing to reactivate an account deactivated by an administrator.");
+      }
+
+      const notificationEmail =
+        process.env.INACTIVITY_DEMO_EMAIL?.trim() || target.email;
+      console.log(`Target worker: ${target.email}`);
+      console.log(`Current status: ${target.status}`);
+      console.log(`Lifecycle email recipient: ${notificationEmail}`);
+      console.log("Password will not be changed.");
+
+      if (!runJob) {
+        console.log("Preview only. Add --apply --run-job to set this worker's inactivity date to six months ago, deactivate it, and send the reactivation link.");
+        return;
+      }
+      if (!apply) {
+        throw new Error("--use-email-account --run-job requires --apply.");
+      }
+
+      const activityAt = monthsAgo(DEACTIVATION_MONTHS);
+      await Worker.collection.updateOne(
+        { _id: target._id },
+        {
+          $set: {
+            status: "active",
+            lastActiveAt: activityAt,
+            updatedAt: activityAt,
+            inactivityWarningStage: DEACTIVATION_MONTHS - 1,
+            lastInactivityNotificationAt: monthsAgo(DEACTIVATION_MONTHS - 1),
+            inactivityEmailOverride: notificationEmail,
+            deactivation: null,
+            reactivationRequestStatus: null,
+          },
+          $unset: {
+            reactivationRequestedAt: "",
+            reactivationReviewedAt: "",
+            reactivationReviewedBy: "",
+            reactivationRejectionReason: "",
+          },
+        },
+      );
+
+      console.log("\nRunning inactivity job for this worker only…");
+      const result = await runInactivityMonitor({
+        userIds: [String(target._id)],
+        emailRecipient: notificationEmail,
+      });
+      console.log(
+        `  processed=${result.processed}, deactivated=${result.deactivated}, emailFailures=${result.emailFailures}`,
+      );
+      if (result.processed !== 1 || result.deactivated !== 1) {
+        throw new Error("The selected worker was not deactivated. Check the inactivity job output and account status.");
+      }
+      if (result.emailFailures > 0) {
+        throw new Error("The selected worker was deactivated, but email delivery failed. Check Gmail SMTP configuration.");
+      }
+      console.log("Worker login should now be blocked until an administrator approves the emailed reactivation request.");
+      return;
+    }
+
+    if (inspectAccount) {
+      const escapedEmail = loginEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const email = { $regex: `^${escapedEmail}$`, $options: "i" };
+      const [worker, employer] = await Promise.all([
+        Worker.findOne({ email }).select("email role status").lean(),
+        Employer.findOne({ email }).select("email role status").lean(),
+      ]);
+      const accounts = [
+        ...(worker ? [{ ...worker, accountType: "worker" }] : []),
+        ...(employer ? [{ ...employer, accountType: "employer" }] : []),
+      ];
+      console.log(`Account inspection for ${loginEmail}`);
+      if (!accounts.length) {
+        console.log("  No worker or employer account found in the database configured by MONGO_URI.");
+      } else {
+        for (const account of accounts) {
+          console.log(`  Account type: ${account.accountType}`);
+          console.log(`  Stored email: ${account.email}`);
+          console.log(`  Status: ${account.status}`);
+        }
+      }
+      return;
+    }
+
+    if (checkLogin) {
+      const worker = await Worker.findOne({ email: loginEmail }).select("email password status role");
+      if (!worker) {
+        throw new Error(`No worker account found for ${loginEmail} in the database configured by MONGO_URI.`);
+      }
+      const passwordMatches = await bcrypt.compare(password, worker.password);
+      const loginAllowed =
+        passwordMatches &&
+        worker.role === "worker" &&
+        worker.status !== "pending" &&
+        worker.status !== "not_active" &&
+        worker.status !== "deleted";
+
+      console.log(`Worker login check for ${worker.email}`);
+      console.log(`  Account found: yes`);
+      console.log(`  Role: ${worker.role}`);
+      console.log(`  Status: ${worker.status}`);
+      console.log(`  Password matches SEED_DEMO_PASSWORD: ${passwordMatches ? "yes" : "no"}`);
+      console.log(`  Worker login allowed: ${loginAllowed ? "yes" : "no"}`);
+
+      if (!loginAllowed) {
+        throw new Error("Worker login check failed. Apply the seed with this password, then run --check-login again.");
+      }
+      return;
+    }
+
     let industry = await Industry.findOne({ title: "Construction" }).select("_id");
     if (!industry && apply) {
       industry = await Industry.create({ title: "Construction" });
@@ -363,10 +546,86 @@ const run = async (): Promise<void> => {
       }
     }
 
+    if (apply) {
+      const activeWorkerResult = await Worker.collection.updateOne(
+        { _id: oid("worker-active") },
+        {
+          $set: {
+            password: passwordHash,
+            status: "active",
+            lastActiveAt: new Date(),
+            inactivityWarningStage: 0,
+          },
+          $unset: {
+            deactivation: "",
+            reactivationRequestedAt: "",
+            reactivationRequestStatus: "",
+            reactivationReviewedAt: "",
+            reactivationReviewedBy: "",
+            reactivationRejectionReason: "",
+          },
+        },
+      );
+      if (activeWorkerResult.matchedCount !== 1) {
+        throw new Error("The seeded active worker account was not found after fixture insertion.");
+      }
+      console.log("- Active worker login fixture: password refreshed and account enabled");
+    }
+
+    if (apply && inactivityDemoEmailRecipient) {
+      const result = await Worker.updateOne(
+        { _id: oid("worker-due-deactivation") },
+        { $set: { inactivityEmailOverride: inactivityDemoEmailRecipient } },
+      );
+      console.log(`- Demo worker lifecycle email override: ${result.matchedCount ? "configured" : "worker not found"}`);
+    }
+
     if (apply && runJob) {
+      const activityAt = monthsAgo(DEACTIVATION_MONTHS);
+      const $set: Record<string, unknown> = {
+        password: passwordHash,
+        status: "active",
+        lastActiveAt: activityAt,
+        updatedAt: activityAt,
+        inactivityWarningStage: Math.max(0, DEACTIVATION_MONTHS - 1),
+        lastInactivityNotificationAt: monthsAgo(Math.max(1, DEACTIVATION_MONTHS - 1)),
+        deactivation: null,
+        reactivationRequestStatus: null,
+      };
+      const $unset: Record<string, ""> = {
+        reactivationRequestedAt: "",
+        reactivationReviewedAt: "",
+        reactivationReviewedBy: "",
+        reactivationRejectionReason: "",
+      };
+      if (inactivityDemoEmailRecipient) {
+        $set.inactivityEmailOverride = inactivityDemoEmailRecipient;
+      } else {
+        $unset.inactivityEmailOverride = "";
+      }
+
+      const resetResult = await Worker.collection.updateOne(
+        { _id: oid("worker-due-deactivation") },
+        { $set, $unset },
+      );
+      if (resetResult.matchedCount !== 1) {
+        throw new Error("Seeded overdue worker was not found before running the inactivity job.");
+      }
+
       console.log("\nRunning inactivity monitor once…");
-      const result = await runInactivityMonitor();
-      console.log(`  processed=${result.processed}, deactivated=${result.deactivated}`);
+      const result = await runInactivityMonitor({
+        userIds: [String(oid("worker-due-deactivation"))],
+        emailRecipient: inactivityDemoEmailRecipient,
+      });
+      console.log(
+        `  processed=${result.processed}, deactivated=${result.deactivated}, emailFailures=${result.emailFailures}`,
+      );
+      if (result.processed !== 1 || result.deactivated !== 1) {
+        throw new Error("The demo worker was not deactivated. Check the inactivity job output.");
+      }
+      if (result.emailFailures > 0) {
+        throw new Error("The demo account was deactivated, but its lifecycle email failed. Check Gmail SMTP configuration and rerun to retry.");
+      }
     }
 
     if (!apply) {
