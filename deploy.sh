@@ -26,8 +26,12 @@ fi
 pm2 start npm --name localworks-api -- run start:prod
 pm2 save
 
-curl --fail --silent --show-error --retry 15 --retry-connrefused --retry-delay 2 \
-  -o /dev/null http://127.0.0.1:8920/api/application-health
+if ! curl --fail --silent --retry 15 --retry-connrefused --retry-delay 2 \
+  -o /dev/null http://127.0.0.1:8920/api/application-health; then
+  echo "API did not become healthy on port 8920. Recent PM2 logs:" >&2
+  pm2 logs localworks-api --lines 50 --nostream >&2
+  exit 1
+fi
 
 sudo nginx -t
 curl --fail --silent --show-error \
