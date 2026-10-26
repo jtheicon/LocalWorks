@@ -3,6 +3,14 @@ import { clearAuthCookieOptions } from "../config/http";
 import { ApplicationSchema, CompanySchema, JobOverviewSchema, EmployerIdSchema, JobSchema, LocationSchema, TagSchema, employerIdSchema, ViewProfile, WorkerIDJob, JobIDJob, ApplicationStatusUpdate, OnlyAccepted, UpdateApplication, InterviewDate, CompanySchemaID, IsAppliedS, WorkerID, TimeLineStatus, UpdateWorkerSchema, UpdateEmployerSchema, EmployerProfileS, RatingSchema, PostContacts, EmployerSchemaid, SkillID, PostMessage, ViewMessageByContactID, NotificationIDSchema, reportValidator, reportWorkerValidator, UpdateReportSchema, DeleteReportSchema, NewWorkerAssignmentSchema, UploadWorkerJobSchema, UpdateWorkerJobSchema, SubmittedFilesSchema, DeleteWorkerJobSchema, SubmittedJobsSchema, SubmittedJobsIDSchema, CompletedAssignmentSchema, NewWorkerJobSchema, DeleteJobSchema, GetReportDetailsSchema, StatusReasonSchema, ViewEmployerResponsesSchema, SubmitEvidenceUpdate, DeleteReportXSchema, DeleteReportsSchema } from "../validator/protected";
 import Job from "../model/Job";
 import { autoModerateJob, runInBackground } from "../services/autoVerify";
+import {
+  computeLifecycle,
+  inactivityPolicyEffectiveAt,
+  nextInactivityMilestone,
+  scheduledActionDate,
+  wholeMonthsSince,
+  DEACTIVATION_MONTHS,
+} from "../services/inactivityPolicy";
 import { filterXSS } from "xss";
 import Application from "../model/Application";
 import { UserSchema } from "../validator/authentication";
@@ -32,6 +40,11 @@ import Report from "../model/Report";
 import VerifiedWorker from "../model/VerifiedWorker";
 import ReportWorker from "../model/ReportWorker";
 import { matchJobsForWorker, matchWorkersForJob } from "../services/jobMatching";
+import {
+  formatApplicationForEmployer,
+  isWorkerUnavailableToEmployer,
+} from "../services/employerWorkerDisplay";
+import { purgeStaleApplicationsForEmployer } from "../services/employerApplicationCleanup";
 import { RECOMMENDED_SCORE } from "../matching/skillScore";
 import WorkerAssignment from "../model/WorkerAssignment";
 import fs from "fs";
@@ -1048,15 +1061,16 @@ export const newApplication = async (req: Request, res: Response) => {
     if (new Date(jobData.applyBefore) < new Date()) {
       return res.status(400).json({
         success: false,
-        info: "This job is already expired. Please try another job."
-      })
+        message: "This job is already expired. Please try another job.",
+        info: "This job is already expired. Please try another job.",
+      });
     }
 
     if (jobData.status !== "ACCEPTED") {
       return res.status(400).json({
         success: false,
         message: "Job is not available",
-        info: "Job is not available"
+        info: "Job is not available",
       });
     }
 
@@ -1064,7 +1078,7 @@ export const newApplication = async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         message: "Job not available",
-        info: "Job not available"
+        info: "Job not available",
       });
     }
 
@@ -1789,7 +1803,7 @@ export const ViewProfileController = async (req: Request, res: Response) => {
   const { status, timeline } = validatedStatus.data
 
   try {
-    const WorkerProf = await Worker.findOne({ _id })
+    const WorkerProf = await Worker.findOne({ _id }).select("-password").lean();
     const locations = await Location.find().sort({ createdAt: -1 })
     if (!WorkerProf) {
       return res.status(404).json({ success: false, message: "Worker doesn't exist"})
@@ -1802,10 +1816,29 @@ export const ViewProfileController = async (req: Request, res: Response) => {
     const skills = await Skill.find().sort({ createdAt: -1 })
     const interviews = await Application.find({ worker: _id, status: { $ne: status }, timeline: { $ne: timeline }, interviewDate: { $ne: "" } })
 
+    const policyAt = inactivityPolicyEffectiveAt(WorkerProf);
+    const stage = WorkerProf.inactivityWarningStage ?? 0;
+    const milestone = nextInactivityMilestone(WorkerProf);
+    const accountInsight = {
+      lifecycle: computeLifecycle(WorkerProf),
+      status: WorkerProf.status,
+      lastActiveAt: policyAt ?? null,
+      inactivityWarningStage: stage,
+      lastInactivityNotificationAt: WorkerProf.lastInactivityNotificationAt ?? null,
+      monthsSinceActivity: policyAt ? wholeMonthsSince(policyAt) : null,
+      lastStageDueAt:
+        policyAt && stage > 0 ? scheduledActionDate(policyAt, stage) : null,
+      nextMilestoneMonths: milestone,
+      nextScheduledAt:
+        policyAt && milestone ? scheduledActionDate(policyAt, milestone) : null,
+      deletionDueAt: policyAt ? scheduledActionDate(policyAt, DEACTIVATION_MONTHS) : null,
+      deactivationMonths: DEACTIVATION_MONTHS,
+    };
 
     return res.status(200).json({
       success: true,
       WorkerProf,
+      accountInsight,
       Applications: applications.length,
       Interviews: interviews.length,
       Locations: locations,
@@ -2668,17 +2701,23 @@ export const viewApplicationsEmployer = async (req: Request, res: Response) => {
   const userId = req.user.id;
 
   try {
+    await purgeStaleApplicationsForEmployer(userId);
+
     const jobIds = await Job.find({ posted: userId }).distinct("_id");
 
     const Applications = await Application.find({
-      job: { $in: jobIds.map(id => id.toString()) },
+      job: { $in: jobIds },
     })
     .populate("job")
     .populate("worker")
     .populate("location")
     .sort({ createdAt: -1 });
 
-    if (!Applications.length) {
+    const formatted = Applications.map((row) => formatApplicationForEmployer(row as never)).filter(
+      (row): row is NonNullable<typeof row> => row !== null,
+    );
+
+    if (!formatted.length) {
       return res.status(200).json({
         success: true,
         message: "No Applications",
@@ -2688,7 +2727,7 @@ export const viewApplicationsEmployer = async (req: Request, res: Response) => {
 
     return res.status(200).json({
       success: true,
-      Applications,
+      Applications: formatted,
     });
   } catch (error) {
     mainError(error, res);
@@ -2822,7 +2861,10 @@ export const UpdateApp = async (req: Request, res: Response) => {
     }
 
     application.status = newStatus;
-    application.timeline = timeline;
+    application.timeline =
+      newStatus === "Accepted" || newStatus === "Not Selected"
+        ? "Final Decision"
+        : timeline;
 
     await application.save();
 
@@ -3088,6 +3130,8 @@ export const SubmitReason = async (req: Request, res: Response) => {
 // View Workers:
 export const ViewWorkers = async (req: Request, res: Response) => {
   try {
+    await purgeStaleApplicationsForEmployer(req.user.id);
+
     // Jobs posted by the employer
     const jobs = await Job.find(
       { 
@@ -3099,22 +3143,21 @@ export const ViewWorkers = async (req: Request, res: Response) => {
 
     const jobIds = jobs.map((job) => job._id);
 
-    // Workers who applied to those jobs
     const applications = await Application.find({
       job: { $in: jobIds },
-      timeline: "Final Decision",
-      status: "Accepted"
+      status: "Accepted",
     }).select("worker");
 
     const workerIds = [
       ...new Set(applications.map((app) => app.worker.toString())),
     ];
 
-    // Worker information
     const workers = await Worker.find({
       _id: { $in: workerIds },
-      status: "active",
-    }).sort({ createdAt: -1 });
+      status: { $ne: "deleted" },
+    })
+      .sort({ createdAt: -1 })
+      .then((rows) => rows.filter((w) => !isWorkerUnavailableToEmployer(w)));
 
     return res.status(200).json({
       success: true, workers,

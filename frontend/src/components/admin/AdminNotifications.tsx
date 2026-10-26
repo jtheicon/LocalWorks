@@ -120,10 +120,10 @@ const AdminNotifications = () => {
   };
 
   return (
-    <main className="p-6 space-y-6">
+    <main className="app-dashboard-main">
       {/* Header */}
       <div>
-        <h2 className="text-xl font-bold text-foreground">Welcome Back!, Admin</h2>
+        <h2 className="app-page-title">Welcome Back!, Admin</h2>
         <p className="text-sm text-muted-foreground">
           Here's what happening with your reports today
         </p>

@@ -1,4 +1,4 @@
-import { Document, Schema, model } from "mongoose";
+import { Document, Schema, Types, model } from "mongoose";
 
 // Users:
 // - First Name
@@ -36,7 +36,20 @@ export interface IWorker extends Document {
   company: string,
   duration: string,
   status: string,
-  reviews: Number
+  reviews: Number,
+  lastActiveAt?: Date,
+  inactivityWarningStage?: number,
+  lastInactivityNotificationAt?: Date,
+  inactivityEmailOverride?: string,
+  deactivation?: Record<string, unknown> | null,
+  reactivationRequestedAt?: Date,
+  reactivationRequestStatus?: "pending" | "approved" | "rejected" | null,
+  reactivationReviewedAt?: Date,
+  reactivationReviewedBy?: Types.ObjectId,
+  reactivationRejectionReason?: string,
+  verification?: Record<string, unknown> | null,
+  createdAt?: Date,
+  updatedAt?: Date,
 }
 
 const WorkerSchema: Schema = new Schema({

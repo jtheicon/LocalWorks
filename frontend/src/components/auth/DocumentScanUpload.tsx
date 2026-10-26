@@ -1,8 +1,14 @@
-import { useRef, useState } from "react";
-import { Loader2, ShieldCheck, ShieldAlert, Sparkles, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ShieldCheck, ShieldAlert, Sparkles } from "lucide-react";
 import FileUpload from "./FileUpload";
 import axios from "axios";
 import { API_ORIGIN } from "@/lib/apiOrigin";
+import { Progress } from "@/components/ui/progress";
+import {
+  aiSimulatedProgress,
+  scanStageLabel,
+  uploadProgressPercent,
+} from "@/lib/documentScanProgress";
 
 axios.defaults.withCredentials = true;
 
@@ -29,6 +35,34 @@ type ScanState =
   | { status: "verified"; documentType: string }
   | { status: "rejected"; message: string; reasons: string[] };
 
+const ScanProgressBar = ({
+  progress,
+  field,
+  phase,
+}: {
+  progress: number;
+  field: "resume" | "permit";
+  phase: "uploading" | "verifying";
+}) => (
+  <div className="space-y-2" aria-live="polite">
+    <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+      <span>{scanStageLabel(progress, field)}</span>
+      <span className="tabular-nums font-medium text-foreground">{progress}%</span>
+    </div>
+    <Progress
+      value={progress}
+      className="h-2 bg-muted"
+      aria-label={phase === "uploading" ? "Document upload progress" : "AI document review progress"}
+    />
+    {phase === "verifying" && progress < 100 && (
+      <p className="text-[11px] text-muted-foreground">
+        AI review usually takes 15–45 seconds. Progress slows near the end while we wait for the
+        model to finish.
+      </p>
+    )}
+  </div>
+);
+
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 // Step 1 of sign-up: the document is uploaded first, checked by AI, and its details are
@@ -37,6 +71,29 @@ const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerifi
   const [file, setFile] = useState<File | null>(null);
   const [scan, setScan] = useState<ScanState>({ status: "idle" });
   const activeRequest = useRef<AbortController | null>(null);
+  const aiProgressStart = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (scan.status !== "scanning" || scan.phase !== "verifying") {
+      aiProgressStart.current = null;
+      return;
+    }
+    if (aiProgressStart.current == null) aiProgressStart.current = Date.now();
+
+    const tick = () => {
+      const started = aiProgressStart.current;
+      if (started == null) return;
+      const next = aiSimulatedProgress(Date.now() - started);
+      setScan((prev) => {
+        if (prev.status !== "scanning" || prev.phase !== "verifying") return prev;
+        return next > prev.progress ? { ...prev, progress: next } : prev;
+      });
+    };
+
+    tick();
+    const id = window.setInterval(tick, 450);
+    return () => window.clearInterval(id);
+  }, [scan.status, scan.phase]);
 
   const handleChange = async (selected: File | null) => {
     activeRequest.current?.abort();
@@ -81,14 +138,17 @@ const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerifi
         signal: controller.signal,
         onUploadProgress: (event) => {
           if (!event.total) return;
-          const progress = Math.min(100, Math.round((event.loaded / event.total) * 100));
-          setScan({ status: "scanning", phase: "uploading", progress });
-          if (progress === 100) {
-            setScan({ status: "scanning", phase: "verifying", progress: 100 });
-          }
+          const progress = uploadProgressPercent(event.loaded, event.total);
+          const done = event.loaded >= event.total;
+          setScan({
+            status: "scanning",
+            phase: done ? "verifying" : "uploading",
+            progress: done ? uploadProgressPercent(event.total, event.total) : progress,
+          });
         },
       });
       if (controller.signal.aborted) return;
+      setScan({ status: "scanning", phase: "verifying", progress: 100 });
       const { documentToken, documentType, fields } = response.data;
       setScan({ status: "verified", documentType });
       onVerified({ documentToken, documentType, fields });
@@ -116,40 +176,16 @@ const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerifi
         Step 1: Upload your document
       </div>
       <p className="text-xs text-muted-foreground">
-        Upload a PDF or DOCX resume up to 5 MB. DOCX files usually upload and process faster. Verification starts after the upload finishes.
+        {field === "resume"
+          ? "Upload a PDF or DOCX resume up to 5 MB. DOCX files usually upload and process faster."
+          : "Upload a clear PDF or image of your business permit (max 5 MB)."}{" "}
+        You will see upload and AI review progress below.
       </p>
 
       <FileUpload label={label} accept={accept} file={file} onChange={handleChange} helpText={helpText} type={type} />
 
       {scan.status === "scanning" && (
-        <div className="space-y-2" aria-live="polite">
-          {scan.phase === "uploading" ? (
-            <>
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span className="flex items-center gap-2"><Upload className="h-4 w-4" />Uploading resume…</span>
-                <span>{scan.progress}%</span>
-              </div>
-              <div
-                className="h-2 overflow-hidden rounded-full bg-muted"
-                role="progressbar"
-                aria-label="Resume upload progress"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={scan.progress}
-              >
-                <div
-                  className="h-full bg-primary transition-[width] duration-200"
-                  style={{ width: `${scan.progress}%` }}
-                />
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Upload complete. AI is checking your resume; this can take a little longer.
-            </div>
-          )}
-        </div>
+        <ScanProgressBar progress={scan.progress} field={field} phase={scan.phase} />
       )}
 
       {scan.status === "verified" && (

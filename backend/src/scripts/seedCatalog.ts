@@ -25,13 +25,34 @@ const scripts = [
   {
     npm: "seed:inactivity",
     file: "src/scripts/seedInactivityDemo.ts",
-    purpose: "Inactivity lifecycle fixtures (warnings, deactivation, reactivation, legacy accounts).",
+    purpose: "Inactivity lifecycle fixtures (3/4/5 warnings, 6-mo deletion, admin reactivation demo).",
     preview: "npm run seed:inactivity",
     apply:
       'SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION SEED_DEMO_PASSWORD=******** npm run seed:inactivity -- --apply',
     reset: "npm run seed:inactivity -- --reset",
     extra: "npm run seed:inactivity -- --apply --run-job  (seed + one inactivity monitor run)",
     env: ["MONGO_URI", "SEED_DEMO_PASSWORD (apply)", "SEED_CONFIRM_PRODUCTION (apply/reset)"],
+  },
+  {
+    npm: "seed:inactivity-email-tour",
+    file: "src/scripts/seedInactivityEmailTour.ts",
+    purpose:
+      "Email tour only: four workers, all mail to INACTIVITY_LIFECYCLE_INBOX (not seed:inactivity UI demo).",
+    preview: "npm run seed:inactivity-email-tour",
+    apply:
+      "SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION SEED_DEMO_PASSWORD=******** npm run seed:inactivity-email-tour -- --apply --run-job",
+    reset: "npm run seed:inactivity-email-tour -- --reset",
+    extra: [
+      "npm run seed:inactivity-email-3mo | 4mo | 5mo  (one warning email each)",
+      "npm run seed:inactivity-email-deletion  (6-month delete + account-deleted email)",
+    ],
+    env: [
+      "MONGO_URI",
+      "SEED_DEMO_PASSWORD (apply)",
+      "SEED_CONFIRM_PRODUCTION (apply/reset)",
+      "INACTIVITY_LIFECYCLE_INBOX (default joav.zabala.up@phinmaed.com)",
+      "EMAIL_USER / EMAIL_PASS / APP_URL",
+    ],
   },
 ];
 
@@ -43,6 +64,10 @@ for (const s of scripts) {
   console.log(`    Preview: ${s.preview}`);
   if (s.apply) console.log(`    Apply:   ${s.apply}`);
   if (s.reset) console.log(`    Reset:   ${s.reset}`);
-  if (s.extra) console.log(`    Extra:   ${s.extra}`);
+  if (s.extra) {
+    for (const line of Array.isArray(s.extra) ? s.extra : [s.extra]) {
+      console.log(`    Extra:   ${line}`);
+    }
+  }
   console.log(`    Env:     ${s.env.join(", ")}\n`);
 }

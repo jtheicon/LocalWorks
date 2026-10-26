@@ -29,6 +29,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import PostJobModal, { EditableJob } from "@/components/employer/PostJobModal";
+import { employerWorkerLabel, isUnavailableEmployerWorker } from "@/lib/employerWorkerDisplay";
+import { API_ORIGIN } from "@/lib/apiOrigin";
 
 axios.defaults.withCredentials = true;
 
@@ -40,7 +42,7 @@ interface PostedJob extends EditableJob {
 
 interface Application {
   _id: string;
-  worker: { _id: string; name: string; photo: string } | null;
+  worker: { _id: string; name: string; photo: string; unavailable?: boolean } | null;
   job: { _id: string; title: string } | null;
   status: "Pending Review" | "Interview Scheduled" | "Accepted" | "Not Selected" | "Withdrawed";
   createdAt: string;
@@ -126,12 +128,16 @@ const EmployerOverview = ({ notifications, onNavigate, onPostJob }: EmployerOver
 
   const jobs: PostedJob[] = (jobsData?.jobs ?? []).filter((job: PostedJob) => job.status !== "DELETED");
   const applications: Application[] = applicationsData?.Applications ?? [];
+  const activeApplications = applications.filter((a) => !isUnavailableEmployerWorker(a.worker));
 
-  const byStatus = (status: Application["status"]) => applications.filter((a) => a.status === status);
+  const byStatus = (status: Application["status"]) =>
+    activeApplications.filter((a) => a.status === status);
   const shortlisted = byStatus("Interview Scheduled");
   const hired = byStatus("Accepted");
   const rejected = byStatus("Not Selected");
-  const inProgress = applications.filter((a) => a.status === "Pending Review" || a.status === "Interview Scheduled");
+  const inProgress = activeApplications.filter(
+    (a) => a.status === "Pending Review" || a.status === "Interview Scheduled",
+  );
 
   const applicantsPerJob = applications.reduce<Record<string, number>>((acc, a) => {
     if (a.job?._id) acc[a.job._id] = (acc[a.job._id] ?? 0) + 1;
@@ -195,10 +201,10 @@ const EmployerOverview = ({ notifications, onNavigate, onPostJob }: EmployerOver
   let offset = 0;
 
   return (
-    <main className="flex-1 p-6 overflow-auto">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="w-full overflow-auto">
+      <div className="grid gap-4 md:gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         {/* Main column */}
-        <div className="space-y-6 min-w-0">
+        <div className="space-y-4 md:space-y-5 min-w-0">
           <div>
             <h2 className="text-2xl font-bold text-foreground">
               {greeting()}, {company?.CompanyInformation?.name ?? "there"}!
@@ -311,11 +317,11 @@ const EmployerOverview = ({ notifications, onNavigate, onPostJob }: EmployerOver
                   <div className="divide-y divide-border">
                     {applications.slice(0, 4).map((app) => {
                       const status = APPLICATION_STATUS[app.status] ?? { label: app.status, className: "" };
-                      const name = app.worker?.name ?? "Unknown worker";
+                      const name = employerWorkerLabel(app.worker);
                       return (
                         <div key={app._id} className="flex items-center gap-3 py-3">
                           <Avatar className="h-9 w-9">
-                            {app.worker?.photo && <AvatarImage src={`http://localhost:8920${app.worker.photo}`} />}
+                            {app.worker?.photo && <AvatarImage src={`${API_ORIGIN}${app.worker.photo}`} />}
                             <AvatarFallback className="bg-primary/10 text-primary text-xs">{getInitials(name)}</AvatarFallback>
                           </Avatar>
                           <div className="flex-1 min-w-0">
@@ -385,7 +391,7 @@ const EmployerOverview = ({ notifications, onNavigate, onPostJob }: EmployerOver
         </div>
 
         {/* Right column */}
-        <div className="space-y-6">
+        <div className="space-y-4 md:space-y-5">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Quick Actions</CardTitle>
@@ -469,7 +475,7 @@ const EmployerOverview = ({ notifications, onNavigate, onPostJob }: EmployerOver
       </div>
 
       <PostJobModal open={editing !== null} onOpenChange={(open) => !open && setEditing(null)} job={editing} />
-    </main>
+    </div>
   );
 };
 

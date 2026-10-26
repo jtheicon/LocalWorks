@@ -15,12 +15,14 @@ const isProduction = process.env.NODE_ENV === "production";
 export const authCookieOptions = (): CookieOptions => ({
   expires: new Date(Date.now() + 60 * 60 * 1000),
   httpOnly: true,
+  path: "/",
   sameSite: isProduction ? "none" : "lax",
   secure: isProduction,
 });
 
 export const clearAuthCookieOptions: CookieOptions = {
   httpOnly: true,
+  path: "/",
   sameSite: isProduction ? "none" : "lax",
   secure: isProduction,
 };

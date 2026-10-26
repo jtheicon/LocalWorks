@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "../ui/button";
 
 import { toast } from "sonner";
+import WorkerPageHeader from "@/components/worker/WorkerPageHeader";
 
 interface Assignment {
   workerAssignment: {
@@ -375,21 +376,11 @@ const WorkerAssignment = () => {
   }
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">My Assignments</h1>
-        <p className="text-muted-foreground mt-2">
-          View the tasks assigned to you.
-        </p>
-      </div>
-
-      <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl font-bold">Worker Assignments</h1>
-            <p className="text-muted-foreground mt-2">
-              View your assignments and submitted work.
-            </p>
-          </div>
+    <div className="space-y-6">
+      <WorkerPageHeader
+        title="Worker assignments"
+        description="Tasks from employers: open assignments, your submissions, and completed work."
+      />
 
           <Tabs
             value={activeTab}
@@ -779,7 +770,6 @@ const WorkerAssignment = () => {
               )}
             </TabsContent>
           </Tabs>
-        </div>
 
       {isModalOpen && selectedAssignment && (
         // Source: https://stackoverflow.com/questions/450903/how-can-i-make-a-div-not-larger-than-its-contents

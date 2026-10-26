@@ -29,6 +29,8 @@ export interface AnalyticsData {
       inactivityMonitoring: number;
       pending: number;
       deactivated: number;
+      deactivatedAdmin: number;
+      legacyInactivityDeactivated: number;
       autoDeactivated: number;
     }
   >;

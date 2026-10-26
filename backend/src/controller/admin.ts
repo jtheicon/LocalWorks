@@ -27,6 +27,8 @@ import {
 } from "../validator/admin";
 import { instanceErrors, mainError } from "../errors/showErrors";
 import { resetInactivityCycleOnReactivation } from "../services/activityTracking";
+import { applyAccountDeletion } from "../services/accountDeletion";
+import { userModelByRole } from "../services/userModelByRole";
 import Employer from "../model/Employer";
 import Job from "../model/Job";
 import Skill from "../model/Skill";
@@ -554,48 +556,64 @@ export const DeleteWorkerEmployer = async (req: Request, res: Response) => {
   const { _id, status, role } = validatedId.data
 
   try {
-    if (role === "employer") {
-      const EmployerUpdate = await Employer.findById(_id)
+    const accountRole = role as "worker" | "employer";
+    const M = userModelByRole(accountRole);
+    const account = await M.findById(_id);
 
-      if (!EmployerUpdate) {
-        return res.status(404).json({
-          success: false,
-          message: "Employer not found",
-        })
-      }
-
-      EmployerUpdate.status = status || EmployerUpdate.status
-      await EmployerUpdate.save()
-
-      if (status === "deleted") {
-        await Job.updateMany(
-          { posted: new Types.ObjectId(_id) },
-          { $set: { status: "DELETED" } }
-        )
-      }
-    } else {
-      const WorkerUpdate = await Worker.findById(_id)
-
-      if (!WorkerUpdate) {
-        return res.status(404).json({
-          success: false,
-          message: "Worker not found",
-        })
-      }
-
-      WorkerUpdate.status = status || WorkerUpdate.status
-      await WorkerUpdate.save()
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: accountRole === "employer" ? "Employer not found" : "Worker not found",
+      });
     }
+
+    if (status === "deleted") {
+      const previousStatus = account.status;
+      if (previousStatus === "deleted") {
+        return res.status(200).json({
+          success: true,
+          message: "Account is already deleted.",
+        });
+      }
+
+      const result = await applyAccountDeletion({
+        role: accountRole,
+        userId: String(_id),
+        reason: "admin",
+        previousStatus,
+        lastActiveAt: account.get("lastActiveAt") ?? null,
+      });
+
+      if (!result.ok) {
+        return res.status(500).json({
+          success: false,
+          message: "Could not delete account. Try again or contact support.",
+        });
+      }
+
+      emitAdminUserLifecycleUpdated("status_change", {
+        userId: String(_id),
+        role: accountRole,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "Deleted successfully!",
+      });
+    }
+
+    account.status = status || account.status;
+    await account.save();
 
     emitAdminUserLifecycleUpdated("status_change", {
       userId: String(_id),
-      role: role as "worker" | "employer",
+      role: accountRole,
     });
 
     return res.status(200).json({
       success: true,
-      message: "Deleted successfully!",
-    })
+      message: "Updated successfully!",
+    });
   } catch (error) {
     mainError(error, res)
   }

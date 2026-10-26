@@ -39,8 +39,10 @@ import {
   inactivityPolicyEffectiveAt,
   adminActivityReference,
 } from "../services/inactivityPolicy";
+import { buildInactivitySeedTimeline } from "./inactivitySeedTimeline";
 import { hashReactivationToken } from "../services/reactivationTokens";
 import { runInactivityMonitor } from "../services/inactivityMonitor";
+import { notifyAdminLifecycleFromScript } from "../services/adminLifecycleSocket";
 
 const PRODUCTION_CONFIRMATION = "I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION";
 const EMAIL_DOMAIN = "localworks-inactivity.test";
@@ -77,9 +79,9 @@ const FIXTURES: FixtureMeta[] = [
   { key: "worker-active", role: "worker", label: "Active (recent login)", email: `worker-active@${EMAIL_DOMAIN}` },
   { key: "worker-inactive-3", role: "worker", label: "Inactive ~3 months (due 3-mo warning on next job run)", email: `worker-inactive-3@${EMAIL_DOMAIN}` },
   { key: "worker-inactive-4", role: "worker", label: "Inactive ~4 months (3-mo warning already sent)", email: `worker-inactive-4@${EMAIL_DOMAIN}` },
-  { key: "worker-inactive-5", role: "worker", label: "Inactive ~5 months (4 & 5-mo reminders sent)", email: `worker-inactive-5@${EMAIL_DOMAIN}` },
-  { key: "worker-due-deactivation", role: "worker", label: "Active, due for deactivation (6 months inactive)", email: DEMO_DUE_ACCOUNT_EMAIL },
-  { key: "worker-deactivated", role: "worker", label: "Deactivated (6+ months inactivity)", email: `worker-deactivated@${EMAIL_DOMAIN}` },
+  { key: "worker-inactive-5", role: "worker", label: "Inactive ~5 months (4-mo warning sent; 5-mo due on next job)", email: `worker-inactive-5@${EMAIL_DOMAIN}` },
+  { key: "worker-due-deactivation", role: "worker", label: "Active, due for deletion (6 months inactive)", email: DEMO_DUE_ACCOUNT_EMAIL },
+  { key: "worker-deactivated", role: "worker", label: "Deleted (6+ months inactivity)", email: `worker-deactivated@${EMAIL_DOMAIN}` },
   { key: "worker-reactivation-pending", role: "worker", label: "Deactivated + pending reactivation request", email: `worker-reactivation-pending@${EMAIL_DOMAIN}` },
   { key: "worker-legacy", role: "worker", label: "Legacy (no lastActiveAt — excluded from auto job)", email: `worker-legacy@${EMAIL_DOMAIN}` },
   {
@@ -93,7 +95,13 @@ const FIXTURES: FixtureMeta[] = [
   { key: "employer-admin-off", role: "employer", label: "Admin deactivated (login blocked, no self-reactivate)", email: `employer-admin-off@${EMAIL_DOMAIN}` },
 ];
 
-const buildDocuments = (passwordHash: string, industryId: Types.ObjectId) => {
+const buildDocuments = (passwordHash: string, industryId: Types.ObjectId, seedRef = new Date()) => {
+  const tl = (idleMonths: number) => buildInactivitySeedTimeline(seedRef, idleMonths);
+  const s3 = tl(3);
+  const s4 = tl(4);
+  const s5 = tl(5);
+  const s6 = tl(DEACTIVATION_MONTHS);
+
   const baseWorker = (key: string, name: string, extra: Record<string, unknown>) => ({
     _id: oid(key),
     name,
@@ -138,20 +146,27 @@ const buildDocuments = (passwordHash: string, industryId: Types.ObjectId) => {
     }),
     baseWorker("worker-inactive-3", "Ben ThreeMonths", {
       status: "active",
-      lastActiveAt: monthsAgo(3),
-      inactivityWarningStage: 0,
+      lastActiveAt: s3.lastActiveAt,
+      updatedAt: s3.lastActiveAt,
+      createdAt: s3.createdAtBackdate,
+      inactivityWarningStage: s3.inactivityWarningStage,
+      lastInactivityNotificationAt: s3.lastInactivityNotificationAt,
     }),
     baseWorker("worker-inactive-4", "Carla FourMonths", {
       status: "active",
-      lastActiveAt: monthsAgo(4),
-      inactivityWarningStage: 3,
-      lastInactivityNotificationAt: monthsAgo(3),
+      lastActiveAt: s4.lastActiveAt,
+      updatedAt: s4.lastActiveAt,
+      createdAt: s4.createdAtBackdate,
+      inactivityWarningStage: s4.inactivityWarningStage,
+      lastInactivityNotificationAt: s4.lastInactivityNotificationAt,
     }),
     baseWorker("worker-inactive-5", "Diego FiveMonths", {
       status: "active",
-      lastActiveAt: monthsAgo(5),
-      inactivityWarningStage: 5,
-      lastInactivityNotificationAt: monthsAgo(4),
+      lastActiveAt: s5.lastActiveAt,
+      updatedAt: s5.lastActiveAt,
+      createdAt: s5.createdAtBackdate,
+      inactivityWarningStage: s5.inactivityWarningStage,
+      lastInactivityNotificationAt: s5.lastInactivityNotificationAt,
     }),
     baseWorker("worker-due-deactivation", "Mika DueDeactivation", {
       email: DEMO_DUE_ACCOUNT_EMAIL,
@@ -159,14 +174,14 @@ const buildDocuments = (passwordHash: string, industryId: Types.ObjectId) => {
         ? { inactivityEmailOverride: inactivityDemoEmailRecipient }
         : {}),
       status: "active",
-      lastActiveAt: monthsAgo(DEACTIVATION_MONTHS),
-      updatedAt: monthsAgo(DEACTIVATION_MONTHS),
-      createdAt: monthsAgo(DEACTIVATION_MONTHS + 1),
-      inactivityWarningStage: Math.max(0, DEACTIVATION_MONTHS - 1),
-      lastInactivityNotificationAt: monthsAgo(Math.max(1, DEACTIVATION_MONTHS - 1)),
+      lastActiveAt: s6.lastActiveAt,
+      updatedAt: s6.lastActiveAt,
+      createdAt: s6.createdAtBackdate,
+      inactivityWarningStage: s6.inactivityWarningStage,
+      lastInactivityNotificationAt: s6.lastInactivityNotificationAt,
     }),
-    baseWorker("worker-deactivated", "Elena Deactivated", {
-      status: "not_active",
+    baseWorker("worker-deactivated", "Elena Deleted", {
+      status: "deleted",
       lastActiveAt: monthsAgo(DEACTIVATION_MONTHS),
       inactivityWarningStage: DEACTIVATION_MONTHS,
       lastInactivityNotificationAt: monthsAgo(DEACTIVATION_MONTHS),
@@ -174,17 +189,18 @@ const buildDocuments = (passwordHash: string, industryId: Types.ObjectId) => {
         reason: "inactivity",
         at: monthsAgo(0),
         lastActiveAt: monthsAgo(DEACTIVATION_MONTHS),
+        deleted: true,
       },
       reactivationRequestStatus: null,
     }),
     baseWorker("worker-reactivation-pending", "Felix PendingReview", {
       status: "not_active",
-      lastActiveAt: monthsAgo(DEACTIVATION_MONTHS),
-      inactivityWarningStage: DEACTIVATION_MONTHS,
+      lastActiveAt: monthsAgo(2),
+      inactivityWarningStage: 0,
       deactivation: {
-        reason: "inactivity",
+        reason: "admin",
         at: monthsAgo(1),
-        lastActiveAt: monthsAgo(DEACTIVATION_MONTHS),
+        previousStatus: "active",
       },
       reactivationRequestedAt: monthsAgo(0),
       reactivationRequestStatus: "pending",
@@ -222,7 +238,7 @@ const buildDocuments = (passwordHash: string, industryId: Types.ObjectId) => {
   const reactivationTokens = [
     {
       _id: oid("token:elena"),
-      userId: oid("worker-deactivated"),
+      userId: oid("worker-reactivation-pending"),
       role: "worker",
       tokenHash: hashReactivationToken(DEMO_REACTIVATION_TOKEN),
       expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
@@ -260,7 +276,7 @@ const printShowcaseGuide = (password: string) => {
   console.log("  Sign in with the Worker tab. Gmail is only used as the lifecycle notification inbox.\n");
   console.log("Admin (use your real admin login):");
   console.log(`  ${origin}/admin-dashboard`);
-  console.log("  • Reactivation requests → approve/reject the request from Mika DueDeactivation");
+  console.log("  • Reactivation requests → approve/reject Felix PendingReview (admin deactivation demo)");
   console.log("  • User management → filter Active / Inactive / Deactivated\n");
 
   console.log("Demo worker logins (password from SEED_DEMO_PASSWORD):");
@@ -270,16 +286,14 @@ const printShowcaseGuide = (password: string) => {
   }
   console.log(`  Password: ${password ? "(set in SEED_DEMO_PASSWORD)" : "(preview only)"}\n`);
 
-  console.log("Six-month deactivation test:");
+  console.log("Six-month deletion test:");
   console.log(`  Login email: worker-due-deactivation@${EMAIL_DOMAIN}`);
   console.log(`  Password: ${password ? "(set in SEED_DEMO_PASSWORD)" : "(preview only)"}`);
-  console.log("  Before admin approval, Worker login should return ACCOUNT_DEACTIVATED (403).");
-  console.log("  The reactivation link is sent to INACTIVITY_DEMO_EMAIL when the seed runs --run-job.");
-  console.log("  Open that link in the email and submit the request, then approve it in the admin dashboard.");
-  console.log("  After approval, the same worker email/password can log in.\n");
-  console.log("Login does not send a new reactivation email; the secure request link is sent at deactivation.\n");
+  console.log("  After --apply --run-job, Worker login should return ACCOUNT_DELETED (403).");
+  console.log("  A deletion notice is sent to INACTIVITY_DEMO_EMAIL when the seed runs --run-job.");
+  console.log("  To use LocalWorks again, register a new account (same email is allowed after release on signup).\n");
 
-  console.log("Reactivation link (Elena Deactivated):");
+  console.log("Reactivation link (legacy admin-deactivated Felix PendingReview):");
   console.log(
     `  ${origin}/account/reactivation/request?token=${encodeURIComponent(DEMO_REACTIVATION_TOKEN)}\n`,
   );
@@ -416,15 +430,16 @@ const run = async (): Promise<void> => {
         emailRecipient: notificationEmail,
       });
       console.log(
-        `  processed=${result.processed}, deactivated=${result.deactivated}, emailFailures=${result.emailFailures}`,
+        `  processed=${result.processed}, deleted=${result.deleted}, emailFailures=${result.emailFailures}`,
       );
-      if (result.processed !== 1 || result.deactivated !== 1) {
-        throw new Error("The selected worker was not deactivated. Check the inactivity job output and account status.");
+      if (result.processed !== 1 || result.deleted !== 1) {
+        throw new Error("The selected worker was not deleted. Check the inactivity job output and account status.");
       }
       if (result.emailFailures > 0) {
-        throw new Error("The selected worker was deactivated, but email delivery failed. Check Gmail SMTP configuration.");
+        throw new Error("The selected worker was deleted, but email delivery failed. Check Gmail SMTP configuration.");
       }
-      console.log("Worker login should now be blocked until an administrator approves the emailed reactivation request.");
+      console.log("Worker login should now return ACCOUNT_DELETED; register again to create a new account.");
+      await notifyAdminLifecycleFromScript();
       return;
     }
 
@@ -618,20 +633,22 @@ const run = async (): Promise<void> => {
         emailRecipient: inactivityDemoEmailRecipient,
       });
       console.log(
-        `  processed=${result.processed}, deactivated=${result.deactivated}, emailFailures=${result.emailFailures}`,
+        `  processed=${result.processed}, deleted=${result.deleted}, emailFailures=${result.emailFailures}`,
       );
-      if (result.processed !== 1 || result.deactivated !== 1) {
-        throw new Error("The demo worker was not deactivated. Check the inactivity job output.");
+      if (result.processed !== 1 || result.deleted !== 1) {
+        throw new Error("The demo worker was not deleted. Check the inactivity job output.");
       }
       if (result.emailFailures > 0) {
-        throw new Error("The demo account was deactivated, but its lifecycle email failed. Check Gmail SMTP configuration and rerun to retry.");
+        throw new Error("The demo account was deleted, but its lifecycle email failed. Check Gmail SMTP configuration and rerun to retry.");
       }
+      await notifyAdminLifecycleFromScript();
     }
 
     if (!apply) {
       console.log(`\nPreview: ${totalNew} document(s) would be inserted. Use --apply to write.`);
     } else {
       console.log(`\nInserted ${totalNew} new document(s).`);
+      await notifyAdminLifecycleFromScript();
     }
 
     printShowcaseGuide(apply ? password : "");

@@ -25,6 +25,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+import WorkerPageHeader from "@/components/worker/WorkerPageHeader";
 
 interface Notification {
   _id: string;
@@ -169,16 +170,11 @@ const WorkerNotifications = () => {
   });
 
   return (
-    <main className="flex-1 p-6 space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">
-          Message Notifications
-        </h2>
-
-        <p className="text-sm text-muted-foreground">
-          New messages from employers
-        </p>
-      </div>
+    <main className="flex-1 space-y-6">
+      <WorkerPageHeader
+        title="Notifications"
+        description="Updates about your applications, messages, and account."
+      />
 
       <div className="flex items-center gap-2">
         {unreadCount > 0 && (

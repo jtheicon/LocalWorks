@@ -13,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, MapPin, PhilippinePeso, Clock, Building2, Filter, CheckCircle, Eye } from "lucide-react";
+import { Search, MapPin, PhilippinePeso, Clock, Building2, Filter, Eye } from "lucide-react";
 import { toast } from "sonner";
 import JobDetailsModal from "./JobDetailsModal";
 import { useJobsStore, Job } from "@/lib/jobsStore";
@@ -22,6 +22,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import CredibilityBadge, { useCredibility } from "@/components/CredibilityBadge";
 import JobListingsSkeleton from "@/components/worker/JobListingsSkeleton";
 import { API_ORIGIN } from "@/lib/apiOrigin";
+import { canWorkerApply, isJobApplyExpired } from "@/lib/workerJobApply";
+import WorkerPageHeader from "@/components/worker/WorkerPageHeader";
 axios.defaults.withCredentials = true;
 
 
@@ -33,6 +35,173 @@ const UTC_Converter = (createdAt) => {
   return months[Number(date[1])] + " " + date[1+1] + ", " + date[0]
 }
 
+const isDemoListing = (job: { info?: { title?: string; company?: string } }) =>
+  /\[DEMO SEED\]/i.test(job.info?.title ?? "") || /demo seed/i.test(job.info?.company ?? "");
+
+const JobsSectionHeader = ({
+  id,
+  title,
+  description,
+  count,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  count?: number;
+}) => (
+  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between border-b border-border pb-3 mb-4">
+    <div>
+      <h2 id={id} className="text-lg font-semibold text-foreground sm:text-xl">
+        {title}
+      </h2>
+      <p className="app-muted-text mt-1">{description}</p>
+    </div>
+    {count != null ? (
+      <Badge variant="secondary" className="w-fit shrink-0 font-normal">
+        {count} {count === 1 ? "listing" : "listings"}
+      </Badge>
+    ) : null}
+  </div>
+);
+
+type JobRow = {
+  info: {
+    _id: string;
+    title: string;
+    company: string;
+    location: string;
+    salary: string;
+    type: string;
+    description?: string;
+    tags?: string[];
+    createdAt: string;
+    applyBefore?: string;
+    positions?: number;
+    posted?: { _id: string };
+  };
+  IsApplied?: boolean;
+  Accepted?: boolean;
+  matchScore: number | null;
+  matchedSkills: { jobSkill: string; workerSkill: string }[];
+};
+
+const JobListingCard = ({
+  job,
+  employerScores,
+  matchLabel,
+  matchTooltip,
+  onView,
+  onApply,
+}: {
+  job: JobRow;
+  employerScores: Record<string, unknown>;
+  matchLabel: (job: JobRow) => string;
+  matchTooltip: (job: JobRow) => string | undefined;
+  onView: () => void;
+  onApply: () => void;
+}) => {
+  const employerId = job.info.posted?._id;
+  let primaryAction: "apply" | "applied" | "hired" | "closed" | "expired" = "apply";
+  if (job.Accepted) primaryAction = "hired";
+  else if (job.IsApplied) primaryAction = "applied";
+  else if (isJobApplyExpired(job.info.applyBefore)) primaryAction = "expired";
+  else if (!canWorkerApply(job)) primaryAction = "closed";
+
+  return (
+    <Card className="hover:shadow-md transition-shadow flex flex-col h-full">
+      <CardHeader className="pb-2 space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-base sm:text-lg line-clamp-2">{job.info.title}</CardTitle>
+            <CardDescription className="flex items-center gap-2 mt-1">
+              <Building2 className="w-4 h-4 shrink-0" />
+              <span className="truncate">{job.info.company}</span>
+            </CardDescription>
+          </div>
+          <Badge variant="outline" title={matchTooltip(job)} className="shrink-0 text-xs">
+            {matchLabel(job)}
+          </Badge>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant={job.info.type === "Full-Time" ? "default" : "secondary"} className="text-xs font-normal">
+            {job.info.type}
+          </Badge>
+          {isDemoListing(job) ? (
+            <Badge variant="outline" className="text-xs font-normal border-amber-500/40 text-amber-800 bg-amber-50">
+              Sample job (demo)
+            </Badge>
+          ) : null}
+          {job.Accepted ? (
+            <Badge className="text-xs font-normal bg-green-500/10 text-green-700 border-green-500/20">Hired</Badge>
+          ) : job.IsApplied ? (
+            <Badge variant="secondary" className="text-xs font-normal">Application sent</Badge>
+          ) : null}
+        </div>
+        {employerId ? (
+          <CredibilityBadge credibility={employerScores[employerId]} subject="Employer" />
+        ) : null}
+      </CardHeader>
+
+      <CardContent className="flex flex-col flex-1 pt-0">
+        {job.info.description ? (
+          <p className="app-muted-text line-clamp-2 mb-3">{job.info.description}</p>
+        ) : null}
+
+        <div className="flex flex-col gap-1.5 app-muted-text mb-3 text-sm">
+          <span className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 shrink-0" />
+            {job.info.location}
+          </span>
+          <span className="flex items-center gap-2">
+            <PhilippinePeso className="w-4 h-4 shrink-0" />
+            {job.info.salary}
+          </span>
+          <span className="flex items-center gap-2">
+            <Clock className="w-4 h-4 shrink-0" />
+            Posted {UTC_Converter(job.info.createdAt)}
+          </span>
+        </div>
+
+        {(job.info.tags?.length ?? 0) > 0 ? (
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {(job.info.tags ?? []).slice(0, 4).map((tag) => (
+              <Badge key={tag} variant="outline" className="text-xs font-normal">
+                {tag}
+              </Badge>
+            ))}
+            {(job.info.tags?.length ?? 0) > 4 ? (
+              <Badge variant="outline" className="text-xs font-normal">
+                +{job.info.tags!.length - 4}
+              </Badge>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="flex gap-2 mt-auto pt-2">
+          <Button variant="secondary" size="sm" className="flex-1 gap-1.5" onClick={onView}>
+            <Eye className="w-4 h-4" />
+            View details
+          </Button>
+          {primaryAction === "apply" ? (
+            <Button size="sm" className="flex-1" onClick={onApply}>
+              Apply
+            </Button>
+          ) : (
+            <Button size="sm" className="flex-1" disabled variant={primaryAction === "hired" ? "secondary" : "outline"}>
+              {primaryAction === "hired"
+                ? "Hired"
+                : primaryAction === "applied"
+                  ? "Applied"
+                  : primaryAction === "expired"
+                    ? "Expired"
+                    : "Closed"}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 const JobListings = () => {
   const queryClient = useQueryClient()
@@ -150,7 +319,8 @@ const JobListings = () => {
     ? recommendedJobs
     : recommendedJobs.slice(0, 2);
 
-
+  const recommendedIdSet = new Set(recommendedJobs.map((job) => String(job.info._id)));
+  const browseJobs = filteredJobs.filter((job) => !recommendedIdSet.has(String(job.info._id)));
 
   // Functions:
   // # ----------------------------------------------------------------------- #
@@ -162,6 +332,15 @@ const JobListings = () => {
   };
 
   const handleApplyClick = (job: any) => {
+    if (isJobApplyExpired(job.info?.applyBefore)) {
+      toast.error("This job is already expired. Please try another job.");
+      return;
+    }
+    if ((job.info?.positions ?? 0) < 1) {
+      toast.error("Job not available");
+      return;
+    }
+
     setJobToApply(job);
 
     // Jobs without listed skills can't be judged, so they skip the warning.
@@ -181,10 +360,10 @@ const JobListings = () => {
   };
 
   const addApplication = async (jobToApply: any) => {
-    return axios.post("http://localhost:8920/api/pro/createApplication", {
+    return axios.post(`${API_ORIGIN}/api/pro/createApplication`, {
       job: jobToApply.info._id,
       location: jobToApply.info.location,
-    });
+    }, { withCredentials: true });
   };
 
   const handleConfirmApply = async () => {
@@ -198,9 +377,12 @@ const JobListings = () => {
       });
 
       await queryClient.invalidateQueries({ queryKey: ["job"] });
+      await queryClient.invalidateQueries({ queryKey: ["ViewApplications"] });
     } catch (error: any) {
       const message =
-        error?.response?.data?.message || "Application failed";
+        error?.response?.data?.message ||
+        error?.response?.data?.info ||
+        "Application failed";
 
       toast.error(message);
     }
@@ -209,14 +391,28 @@ const JobListings = () => {
     setJobToApply(null);
   };
 
+  const renderJobCard = (job: JobRow, keyPrefix: string) => (
+    <JobListingCard
+      key={`${keyPrefix}-${job.info._id}`}
+      job={job}
+      employerScores={employerScores}
+      matchLabel={matchLabel}
+      matchTooltip={matchTooltip}
+      onView={() => handleViewDetails(job as Job)}
+      onApply={() => handleApplyClick(job)}
+    />
+  );
+
   return (
     <div>
       {/* Search Section */}
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold mb-2">Find Your Next Job</h2>
-        <p className="text-muted-foreground mb-6">Browse available job openings in your area</p>
-        
-        <form className="flex gap-2 max-w-2xl">
+      <div className="mb-4 md:mb-5">
+        <WorkerPageHeader
+          title="Find your next job"
+          description="Browse open roles in your area. Apply when a post matches your skills and schedule."
+        />
+
+        <form className="flex w-full max-w-3xl gap-2 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
@@ -312,207 +508,59 @@ const JobListings = () => {
       {isPending && <JobListingsSkeleton />}
 
       {/* Job Listings */}
-      <div className="grid gap-4">
-        {/* Recommended Jobs */}
-        {!isPending && recommendedJobs.length > 0 && (
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-bold">Recommended For You</h3>
-                <p className="text-sm text-muted-foreground">
-                  Jobs matching at least {recommendedScore}% of your skills
-                  {aiMatching && " · AI-assisted matching"}
-                </p>
+      {!isPending && filteredJobs.length > 0 && (
+        <div className="space-y-10">
+          {recommendedJobs.length > 0 ? (
+            <section aria-labelledby="jobs-recommended-heading">
+              <JobsSectionHeader
+                id="jobs-recommended-heading"
+                title="Recommended for you"
+                description={`Strong skill match (${recommendedScore}% or higher), not applied yet${
+                  aiMatching ? " · AI-assisted matching" : ""
+                }.`}
+                count={recommendedJobs.length}
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {displayedRecommended.map((job) => renderJobCard(job, "recommended"))}
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {displayedRecommended.map((job: any) => (
-                <Card
-                  key={`recommended-${job.info._id}`}
-                  className="hover:shadow-md transition-shadow flex flex-col"
-                >
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <CardTitle className="text-lg line-clamp-1">
-                          {job.info.title}
-                        </CardTitle>
-
-                        <CardDescription className="flex items-center gap-2 mt-1">
-                          <Building2 className="w-4 h-4" />
-                          {job.info.company}
-                        </CardDescription>
-                        <div className="mt-2">
-                          <CredibilityBadge credibility={employerScores[job.info.posted?._id]} subject="Employer" />
-                        </div>
-                      </div>
-
-                      <Badge title={matchTooltip(job)}>
-                        {matchLabel(job)}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent>
-                    <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mb-3">
-                      <span className="flex items-center gap-1">
-                        <MapPin className="w-4 h-4" />
-                        {job.info.location}
-                      </span>
-
-                      <span>
-                        {job.info.salary}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {(job.info.tags || []).slice(0, 3).map((tag: any) => (
-                        <Badge key={tag} variant="outline">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-
-                    <div className="flex gap-2 pt-6 mt-auto">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => handleViewDetails(job)}
-                      >
-                        View
-                      </Button>
-
-                      {job.IsApplied ? (
-                        <Button disabled size="sm" className="flex-1">
-                          Applied
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => handleApplyClick(job)}
-                        >
-                          Apply
-                        </Button>
-                      )}
-
-                                            {job.Accepted ? (
-                        <Button disabled size="sm" className="flex-1">
-                          You have been accepted at this job
-                        </Button>
-                      ) : (
-                        <div></div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!isPending && recommendedJobs.length > 2 && (
-          <div className="mt-4 flex justify-center">
-            <Button
-              variant="outline"
-              onClick={() => setShowAllRecommended(!showAllRecommended)}
-            >
-              {showAllRecommended
-                ? "Show Less"
-                : `View ${recommendedJobs.length - 2} More Jobs`}
-            </Button>
-          </div>
-        )}
-
-        
-        {!isPending && filteredJobs.map((job: any) => {
-          return (
-            <Card key={job.info._id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-xl mb-1">
-                      {job.info.title}
-                    </CardTitle>
-
-                    <CardDescription className="flex items-center gap-2 text-base">
-                      <Building2 className="w-4 h-4" />
-                      {job.info.company}
-                    </CardDescription>
-                    <div className="mt-2">
-                      <CredibilityBadge credibility={employerScores[job.info.posted?._id]} subject="Employer" />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-end gap-2">
-                    <Badge title={matchTooltip(job)}>
-                      {matchLabel(job)}
-                    </Badge>
-
-                    <Badge variant={job.info.type === "Full-Time" ? "default" : "secondary"}>
-                      {job.info.type}
-                    </Badge>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground mb-4">{job.info.description}</p>
-                
-                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mb-4">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-4 h-4" />
-                    {job.info.location}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    {job.info.salary}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" />
-                    Posted: {UTC_Converter(job.info.createdAt)}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {(job.info.tags || []).map((tag: any) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-
-                <div className="flex gap-2">
-                  <Button 
-                    variant="secondary" 
-                    className="gap-2"
-                    onClick={() => handleViewDetails(job)}
+              {recommendedJobs.length > 2 ? (
+                <div className="mt-4 flex justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAllRecommended(!showAllRecommended)}
                   >
-                    <Eye className="w-4 h-4" />
-                    View Details
+                    {showAllRecommended
+                      ? "Show fewer recommendations"
+                      : `Show ${recommendedJobs.length - 2} more recommendations`}
                   </Button>
-                  {job.IsApplied ? (
-                    <Button disabled className="gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      Applied
-                    </Button>
-                  ) : (
-                    <Button onClick={() => handleApplyClick(job)}>Apply Now</Button>
-                  )}
-                                    {job.Accepted ? (
-                    <Button disabled className="gap-2">
-                      <CheckCircle className="w-4 h-4" />
-                      You have been accepted at this job
-                    </Button>
-                  ) : (
-                    <div></div>
-                  )}
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {browseJobs.length > 0 ? (
+            <section aria-labelledby="jobs-browse-heading">
+              <JobsSectionHeader
+                id="jobs-browse-heading"
+                title={recommendedJobs.length > 0 ? "More open jobs" : "All open jobs"}
+                description={
+                  recommendedJobs.length > 0
+                    ? "Other roles that match your search and filters. Recommended listings above are not repeated here."
+                    : "Every open role that matches your search and filters."
+                }
+                count={browseJobs.length}
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {browseJobs.map((job) => renderJobCard(job, "browse"))}
+              </div>
+            </section>
+          ) : recommendedJobs.length > 0 ? (
+            <p className="app-muted-text text-sm border-t border-border pt-6">
+              No other listings match your filters. Adjust search or filters to see more roles.
+            </p>
+          ) : null}
+        </div>
+      )}
 
       {!isPending && AllJobs.length > 0 && filteredJobs.length === 0 && (
         <div className="text-center py-12">

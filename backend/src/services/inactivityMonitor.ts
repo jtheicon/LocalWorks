@@ -12,13 +12,15 @@ import {
   type WarningMonth,
 } from "./inactivityPolicy";
 import {
-  sendDeactivationEmail,
+  sendInactivityDeletionEmail,
   sendInactivityWarningEmail,
-  notifyAdminDeactivation,
+  notifyAdminInactivityDeletion,
   accountLifecycleEmail,
+  accountDisplayName,
+  lifecycleMailRecipientName,
 } from "./inactivityEmails";
-import ReactivationToken from "../model/ReactivationToken";
-import { hashReactivationToken, issueReactivationToken } from "./reactivationTokens";
+import { applyAccountDeletion } from "./accountDeletion";
+import { migrateLegacyInactivityDeactivatedAccounts } from "./legacyInactivityMigration";
 import { emitAdminUserLifecycleUpdated } from "./adminLifecycleSocket";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -29,13 +31,6 @@ const MODELS: [Role, Model<any>][] = [
   ["worker", Worker],
   ["employer", Employer],
 ];
-
-const appOrigin = () => {
-  const fromEnv = process.env.APP_URL?.trim();
-  if (fromEnv) return fromEnv.replace(/\/$/, "");
-  const cors = process.env.CORS_ORIGINS?.split(",")[0]?.trim();
-  return cors || "http://localhost:8080";
-};
 
 export interface CleanupCandidate {
   _id: string;
@@ -52,7 +47,7 @@ export const findInactiveAccounts = async (): Promise<CleanupCandidate[]> => {
       status: { $in: ["active", "verified"] },
       lastActiveAt: { $exists: true, $ne: null },
     })
-      .select("name company email lastActiveAt updatedAt createdAt")
+      .select("name company owner email lastActiveAt updatedAt createdAt")
       .lean();
     for (const d of docs) {
       const effectiveAt = inactivityPolicyEffectiveAt(d);
@@ -60,7 +55,7 @@ export const findInactiveAccounts = async (): Promise<CleanupCandidate[]> => {
       results.push({
         _id: String(d._id),
         role,
-        name: d.name ?? d.company,
+        name: accountDisplayName(d, role),
         email: d.email,
         lastActiveAt: effectiveAt,
       });
@@ -69,7 +64,12 @@ export const findInactiveAccounts = async (): Promise<CleanupCandidate[]> => {
   return results.sort((a, b) => a.lastActiveAt.getTime() - b.lastActiveAt.getTime());
 };
 
-let lastRun: { at: Date; processed: number; deactivated: number } | null = null;
+let lastRun: {
+  at: Date;
+  processed: number;
+  deleted: number;
+  legacyMigrated: number;
+} | null = null;
 export const getLastCleanupRun = () => lastRun;
 
 const adminNotify = async (title: string, description: string) => {
@@ -91,11 +91,11 @@ const processUser = async (
   emailRecipient?: string,
 ) => {
   if (!isEligibleForInactivityAutomation(doc)) {
-    return { deactivated: false, changed: false, emailFailed: false };
+    return { deleted: false, changed: false, emailFailed: false };
   }
 
   const effectiveAt = inactivityPolicyEffectiveAt(doc);
-  if (!effectiveAt) return { deactivated: false, changed: false, emailFailed: false };
+  if (!effectiveAt) return { deleted: false, changed: false, emailFailed: false };
 
   const months = wholeMonthsSince(effectiveAt);
   const stage: number = doc.inactivityWarningStage ?? 0;
@@ -118,13 +118,22 @@ const processUser = async (
       { new: true },
     );
     if (!updated) return false;
-    const name = updated.name ?? updated.company ?? "there";
+    const to =
+      emailRecipient ??
+      accountLifecycleEmail(updated.email, updated.get("inactivityEmailOverride"));
+    const name = await lifecycleMailRecipientName(
+      {
+        email: updated.email,
+        inactivityEmailOverride: updated.get("inactivityEmailOverride"),
+        name: updated.get("name"),
+        company: updated.get("company"),
+        owner: updated.get("owner"),
+      },
+      role,
+      to,
+    );
     try {
-      await sendInactivityWarningEmail(
-        emailRecipient ?? accountLifecycleEmail(updated.email, updated.get("inactivityEmailOverride")),
-        name,
-        warnMonth,
-      );
+      await sendInactivityWarningEmail(to, name, warnMonth);
     } catch (err) {
       console.error("[inactivity] warning email failed:", err);
       warningEmailFailed = true;
@@ -143,7 +152,7 @@ const processUser = async (
   };
 
   if (months >= DEACTIVATION_MONTHS && stage < DEACTIVATION_MONTHS) {
-    // fall through to deactivation below
+    // fall through to deletion below
   } else if (months >= 5 && stage < 5) {
     const sent = await sendWarning(5);
     if (sent) {
@@ -152,7 +161,7 @@ const processUser = async (
         role,
       });
     }
-    return { deactivated: false, changed: sent, emailFailed: warningEmailFailed };
+    return { deleted: false, changed: sent, emailFailed: warningEmailFailed };
   } else if (months >= 4 && stage < 4) {
     const sent = await sendWarning(4);
     if (sent) {
@@ -161,7 +170,7 @@ const processUser = async (
         role,
       });
     }
-    return { deactivated: false, changed: sent, emailFailed: warningEmailFailed };
+    return { deleted: false, changed: sent, emailFailed: warningEmailFailed };
   } else if (months >= 3 && stage < 3) {
     const sent = await sendWarning(3);
     if (sent) {
@@ -170,23 +179,12 @@ const processUser = async (
         role,
       });
     }
-    return { deactivated: false, changed: sent, emailFailed: warningEmailFailed };
+    return { deleted: false, changed: sent, emailFailed: warningEmailFailed };
   } else if (months < DEACTIVATION_MONTHS || stage >= DEACTIVATION_MONTHS) {
-    return { deactivated: false, changed: false, emailFailed: false };
+    return { deleted: false, changed: false, emailFailed: false };
   }
 
-  let reactivationUrl = `${appOrigin()}/account/reactivation/request`;
-  let tokenRaw: string | null = null;
-  try {
-    const issued = await issueReactivationToken(String(doc._id), role);
-    tokenRaw = issued.raw;
-    reactivationUrl = `${appOrigin()}/account/reactivation/request?token=${encodeURIComponent(issued.raw)}`;
-  } catch (err) {
-    console.error("[inactivity] reactivation token failed:", err);
-    return { deactivated: false, changed: false, emailFailed: false };
-  }
-
-  const deactivatedDoc = await M.findOneAndUpdate(
+  const reserved = await M.findOneAndUpdate(
     {
       _id: doc._id,
       status: { $in: ["active", "verified"] },
@@ -194,55 +192,86 @@ const processUser = async (
     },
     {
       $set: {
-        status: "not_active",
         inactivityWarningStage: DEACTIVATION_MONTHS,
         lastInactivityNotificationAt: now(),
-        deactivation: {
-          reason: "inactivity",
-          at: now(),
-          lastActiveAt: doc.lastActiveAt,
-          policyEffectiveAt: effectiveAt,
-          previousStatus: doc.status,
-        },
-        reactivationRequestStatus: null,
       },
     },
     { new: true },
   );
-
-  if (!deactivatedDoc) {
-    if (tokenRaw) {
-      await ReactivationToken.deleteMany({ tokenHash: hashReactivationToken(tokenRaw) });
-    }
-    return { deactivated: false, changed: false, emailFailed: false };
+  if (!reserved) {
+    return { deleted: false, changed: false, emailFailed: false };
   }
 
-  const name = deactivatedDoc.name ?? deactivatedDoc.company ?? "User";
-  let deactivationEmailFailed = false;
-  try {
-    await sendDeactivationEmail(
-      emailRecipient ?? accountLifecycleEmail(
-        deactivatedDoc.email,
-        deactivatedDoc.get("inactivityEmailOverride"),
-      ),
-      name,
-      reactivationUrl,
+  const deletionTo =
+    emailRecipient ??
+    accountLifecycleEmail(doc.email, doc.inactivityEmailOverride);
+  const deletionGreetingName = await lifecycleMailRecipientName(
+    {
+      email: doc.email,
+      inactivityEmailOverride: doc.inactivityEmailOverride,
+      name: doc.name,
+      company: doc.company,
+      owner: doc.owner,
+    },
+    role,
+    deletionTo,
+  );
+
+  const deletion = await applyAccountDeletion({
+    role,
+    userId: doc._id,
+    reason: "inactivity",
+    previousStatus: doc.status,
+    lastActiveAt: doc.lastActiveAt,
+    policyEffectiveAt: effectiveAt,
+    inactivityWarningStage: DEACTIVATION_MONTHS,
+  });
+
+  if (!deletion.ok) {
+    await M.updateOne(
+      { _id: doc._id, inactivityWarningStage: DEACTIVATION_MONTHS },
+      {
+        $set: {
+          inactivityWarningStage: stage,
+          lastInactivityNotificationAt: doc.lastInactivityNotificationAt ?? null,
+        },
+      },
     );
-  } catch (err) {
-    console.error("[inactivity] deactivation email failed:", err);
-    deactivationEmailFailed = true;
+    return { deleted: false, changed: false, emailFailed: false };
   }
 
-  const label = `${name} (${role}, ${deactivatedDoc.email})`;
-  await adminNotify("Account deactivated (inactivity)", label);
+  if (deletion.alreadyDeleted) {
+    return { deleted: false, changed: false, emailFailed: false };
+  }
+
+  const deletedDoc = await M.findById(doc._id).select("email").lean();
+  if (!deletedDoc) {
+    return { deleted: false, changed: false, emailFailed: false };
+  }
+
+  let deletionEmailFailed = false;
+  try {
+    await sendInactivityDeletionEmail(deletionTo, deletionGreetingName);
+  } catch (err) {
+    console.error("[inactivity] deletion email failed:", err);
+    deletionEmailFailed = true;
+  }
+
+  const label = `${deletionGreetingName} (${role}, ${deletedDoc.email})`;
+  await adminNotify("Account deleted (inactivity)", label);
   const admin = await Admin.findOne().select("email").lean();
   if (admin?.email) {
-    notifyAdminDeactivation(admin.email, label).catch((e) =>
+    notifyAdminInactivityDeletion(admin.email, label).catch((e) =>
       console.error("[inactivity] admin email failed:", e),
     );
   }
 
-  return { deactivated: true, changed: true, emailFailed: deactivationEmailFailed };
+  emitAdminUserLifecycleUpdated("inactivity_deletion", {
+    userId: String(doc._id),
+    role,
+  });
+
+  return { deleted: true, changed: true, emailFailed: deletionEmailFailed };
 };
 
 export const runInactivityMonitor = async (options?: {
@@ -250,8 +279,16 @@ export const runInactivityMonitor = async (options?: {
   emailRecipient?: string;
 }) => {
   const started = now();
+  let legacyMigrated = 0;
+  if (!options?.userIds) {
+    legacyMigrated = await migrateLegacyInactivityDeactivatedAccounts();
+    if (legacyMigrated > 0) {
+      emitAdminUserLifecycleUpdated("inactivity_job");
+    }
+  }
+
   let processed = 0;
-  let deactivated = 0;
+  let deleted = 0;
   let emailFailures = 0;
   const userFilter = options?.userIds ? { _id: { $in: options.userIds } } : {};
 
@@ -262,7 +299,7 @@ export const runInactivityMonitor = async (options?: {
       ...userFilter,
     })
       .select(
-        "name company email lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt inactivityEmailOverride status",
+        "name company owner email lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt inactivityEmailOverride status",
       )
       .lean();
 
@@ -270,7 +307,7 @@ export const runInactivityMonitor = async (options?: {
       try {
         processed += 1;
         const result = await processUser(doc, role, M, options?.emailRecipient);
-        if (result.deactivated) deactivated += 1;
+        if (result.deleted) deleted += 1;
         if (result.emailFailed) emailFailures += 1;
       } catch (err) {
         console.error("[inactivity] user processing failed:", doc._id, err);
@@ -278,14 +315,14 @@ export const runInactivityMonitor = async (options?: {
     }
   }
 
-  lastRun = { at: started, processed, deactivated };
+  lastRun = { at: started, processed, deleted, legacyMigrated };
   console.log(
-    `[inactivity] Processed ${processed} account(s), deactivated ${deactivated}`,
+    `[inactivity] Processed ${processed} account(s), deleted ${deleted}, legacy migrated ${legacyMigrated}`,
   );
   if (processed > 0) {
     emitAdminUserLifecycleUpdated("inactivity_job");
   }
-  return { processed, deactivated, emailFailures };
+  return { processed, deleted, emailFailures, legacyMigrated };
 };
 
 /** @deprecated alias */

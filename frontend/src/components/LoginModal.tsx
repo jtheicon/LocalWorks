@@ -78,7 +78,10 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
           const d = error.response.data
           toast.error(d.message)
           if (d.code === "ACCOUNT_DEACTIVATED") {
-            toast.info("Open the reactivation link from your deactivation email, or contact support.")
+            toast.info("This account was deactivated by an administrator. Contact support for help.")
+          }
+          if (d.code === "ACCOUNT_DELETED") {
+            toast.info("Register again with the same email if you want a new account.")
           }
         } else if (error.request) {
           toast.error(error.request)
@@ -101,7 +104,10 @@ const LoginModal = ({ open, onOpenChange, onSwitchToSignUp, onSuccess }: LoginMo
           const d = error.response.data
           toast.error(d.message)
           if (d.code === "ACCOUNT_DEACTIVATED") {
-            toast.info("Open the reactivation link from your deactivation email, or contact support.")
+            toast.info("This account was deactivated by an administrator. Contact support for help.")
+          }
+          if (d.code === "ACCOUNT_DELETED") {
+            toast.info("Register again with the same email if you want a new account.")
           }
         }
       })

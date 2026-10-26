@@ -4,6 +4,7 @@ export type AdminStatusInput = {
   status: string;
   lifecycle?: string;
   monthsSinceActivity?: number | null;
+  inactivityWarningStage?: number | null;
   reactivationRequestStatus?: string | null;
 };
 
@@ -45,17 +46,21 @@ export const resolveAdminUserStatus = (
   if (row.lifecycle === "inactive") {
     const longIdle =
       row.monthsSinceActivity != null && row.monthsSinceActivity >= deactivationMonths;
+    const warnStage = row.inactivityWarningStage ?? 0;
+    const warnNote =
+      warnStage > 0 ? ` · ${warnStage}-month warning email sent` : "";
     return {
-      label: longIdle ? `Inactive (${deactivationMonths}+ mo)` : "Inactive (monitoring)",
-      badgeClassName: "bg-amber-100 text-amber-900",
+      label: longIdle ? "Inactive (deletion due)" : "Inactive (monitoring)",
+      badgeClassName: longIdle ? "bg-red-100 text-red-900" : "bg-amber-100 text-amber-900",
       accessNote:
-        longIdle
+        (longIdle
           ? row.status === "verified"
-            ? "Verified · access still active · overdue for automated deactivation if the daily job has not run yet."
-            : "Access still active · overdue for automated deactivation if the daily job has not run yet."
+            ? "Verified · access still active until the daily job runs · 6+ mo idle → permanent account deletion (not admin deactivate)."
+            : "Access still active until the daily job runs · 6+ mo idle → permanent account deletion (not admin deactivate)."
           : row.status === "verified"
-            ? "Verified · platform access active · inactivity emails / deactivation may apply."
-            : "Platform access active · in inactivity monitoring (3/4/5/6‑month policy).",
+            ? "Verified · platform access active · inactivity warnings at 3/4/5 mo; permanent deletion at 6 mo."
+            : "Platform access active · inactivity monitoring (3/4/5 warnings, permanent deletion at 6 mo).") +
+        warnNote,
     };
   }
 

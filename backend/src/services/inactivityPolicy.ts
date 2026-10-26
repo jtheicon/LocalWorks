@@ -2,7 +2,7 @@
  * Account inactivity policy (calendar months, platform timezone = server local time).
  *
  * Qualifying activity is recorded via recordQualifyingActivity() — see activityTracking.ts.
- * Legacy accounts without lastActiveAt are not auto-emailed or auto-deactivated until they sign in once.
+ * Legacy accounts without lastActiveAt are not auto-emailed or auto-deleted until they sign in once.
  */
 
 export const DEACTIVATION_MONTHS = Number(process.env.INACTIVITY_MONTHS) || 6;
@@ -113,7 +113,7 @@ export const adminActivityReference = (user: {
   return { at: null, basis: "none", lastQualifyingActivityAt: null, profileUpdatedAt: updated };
 };
 
-/** Warning / deactivation clock (same idle date as admin UI, not login ping alone). */
+/** Warning / deletion clock (same idle date as admin UI, not login ping alone). */
 export const inactivityPolicyEffectiveAt = (user: {
   lastActiveAt?: Date | null;
   updatedAt?: Date;
@@ -160,7 +160,7 @@ export const computeLifecycle = (user: {
   return "active";
 };
 
-/** Next warning month due, or DEACTIVATION_MONTHS when deactivation is due, or null. */
+/** Next warning month due, or DEACTIVATION_MONTHS when account deletion is due, or null. */
 export const nextInactivityMilestone = (user: {
   status: string;
   lastActiveAt?: Date | null;

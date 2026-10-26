@@ -48,6 +48,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { todayInputDate } from "@/lib/utils";
 import CredibilityBadge, { useCredibility } from "@/components/CredibilityBadge";
+import { API_ORIGIN } from "@/lib/apiOrigin";
+import { employerWorkerLabel, isUnavailableEmployerWorker } from "@/lib/employerWorkerDisplay";
 
 axios.defaults.withCredentials = true;
 
@@ -63,6 +65,7 @@ interface Application {
     rating: string;
     skills: string[];
     photo: string;
+    unavailable?: boolean;
   };
   job: {
     _id: string;
@@ -218,19 +221,19 @@ const WorkerApplications = () => {
       const { application, status } = variables;
 
       if (status === "Accepted") {
-        toast.success(`${application.worker.name} has been accepted!`, {
+        toast.success(`${employerWorkerLabel(application.worker)} has been accepted!`, {
           description: `They will be notified about the ${application.job.title} position.`,
         });
       } else if (status === "Interview Scheduled") {
         toast.success(
-          `${application.worker.name} has been scheduled for an interview!`,
+          `${employerWorkerLabel(application.worker)} has been scheduled for an interview!`,
           {
             description: `They will be notified about the ${application.job.title} interview schedule.`,
           }
         );
       } else {
         toast.info(
-          `${application.worker.name}'s application has been declined.`
+          `${employerWorkerLabel(application.worker)}'s application has been declined.`
         );
       }
     },
@@ -460,7 +463,7 @@ const WorkerApplications = () => {
                 <>
                   Are you sure you want to accept{" "}
                   <strong>
-                    {confirmDialog.application?.worker.name}
+                    {employerWorkerLabel(confirmDialog.application?.worker)}
                   </strong>{" "}
                   for the{" "}
                   <strong>
@@ -472,7 +475,7 @@ const WorkerApplications = () => {
                 <>
                   Are you sure you want to reject{" "}
                   <strong>
-                    {confirmDialog.application?.worker.name}
+                    {employerWorkerLabel(confirmDialog.application?.worker)}
                   </strong>
                   's application for the{" "}
                   <strong>
@@ -626,14 +629,14 @@ const ApplicationSection = ({
             <CardHeader className="pb-2">
               <div className="flex items-start gap-4">
                 <Avatar className="w-14 h-14">
-                  <AvatarImage src={`http://localhost:8920${application.worker.photo}`} />
+                  <AvatarImage src={`${API_ORIGIN}${application.worker.photo}`} />
                   <AvatarFallback className="bg-primary/10 text-primary">
-                    {getInitials(application.worker.name)}
+                    {getInitials(employerWorkerLabel(application.worker))}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
                   <CardTitle className="text-lg">
-                    {application.worker.name}
+                    {employerWorkerLabel(application.worker)}
                   </CardTitle>
                   <CardDescription>
                     {application.job.title}
@@ -669,7 +672,7 @@ const ApplicationSection = ({
               </div>
 
               <div className="flex flex-wrap gap-1 mb-4">
-                {application.worker.skills.map((skill) => (
+                {(application.worker.skills ?? []).map((skill) => (
                   <Badge key={skill} variant="outline" className="text-xs">
                     {skill}
                   </Badge>
@@ -681,7 +684,14 @@ const ApplicationSection = ({
                   variant="secondary"
                   size="sm"
                   className="gap-2"
-                  onClick={() => onView(application)}
+                  disabled={isUnavailableEmployerWorker(application.worker)}
+                  onClick={() => {
+                    if (isUnavailableEmployerWorker(application.worker)) {
+                      toast.info("This worker's account is no longer on LocalWorks.");
+                      return;
+                    }
+                    onView(application);
+                  }}
                 >
                   <Eye className="w-4 h-4" />
                   View Profile

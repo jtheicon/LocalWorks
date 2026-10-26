@@ -20,7 +20,12 @@ interface SignUpModalProps {
 const SignUpModal = ({ open, onOpenChange, onSwitchToLogin, onSuccess }: SignUpModalProps) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="sm:max-w-md max-h-[90vh] overflow-y-auto"
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+      >
         <DialogHeader className="text-center">
           <DialogTitle className="text-2xl font-bold">Join LocalWorks</DialogTitle>
           <DialogDescription className="text-base">

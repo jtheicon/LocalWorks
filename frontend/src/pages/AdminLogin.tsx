@@ -8,7 +8,7 @@ import { Shield, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/logo.avif";
 import axios from "axios";
-
+import { ADMIN_ORIGIN } from "@/lib/adminConnect";
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -17,31 +17,28 @@ const AdminLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const AdminLogUser = async () => {
-    await axios.post("http://localhost:8920/api/auth/admin/login", { email, password }, {
-      withCredentials: true
-    })
-      .then(function (response) {
-        if (response.data) {
-          navigate("/admin-dashboard");
-          localStorage.setItem("admin-authenticated", "true");
-          toast.success("Welcome back, Admin!");
-        }
-      })
-      .catch(function (error) {
-        if (error.response) {
-          toast.error(error.response.data.message);
-        }
-      })
-  }
-
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      AdminLogUser()
+    try {
+      const response = await axios.post(
+        `${ADMIN_ORIGIN}/api/auth/admin/login`,
+        { email, password },
+        { withCredentials: true },
+      );
+      if (response.data?.success) {
+        toast.success("Welcome back, Admin!");
+        navigate("/admin-dashboard", { replace: true });
+      }
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.data?.message) {
+        toast.error(String(err.response.data.message));
+      } else {
+        toast.error("Could not sign in. Check that the backend is running.");
+      }
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   };
 
   return (

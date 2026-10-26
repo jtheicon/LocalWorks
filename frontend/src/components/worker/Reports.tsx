@@ -11,6 +11,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { WorkerReportModal } from "./ReportEmployerModal";
 
 import { toast } from "sonner";
+import WorkerPageHeader from "@/components/worker/WorkerPageHeader";
 
 import {
   Dialog,
@@ -247,8 +248,12 @@ const Reports = () => {
 
   return (
     <div className="space-y-4">
+      <WorkerPageHeader
+        title="Reports"
+        description="Reports you filed about employers. Filter by status or type below."
+      />
 
-      <div className="flex gap-4 mb-4">
+      <div className="flex flex-wrap gap-4 mb-4">
 
         <select
           className="

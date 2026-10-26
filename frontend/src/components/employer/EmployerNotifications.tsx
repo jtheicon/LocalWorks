@@ -57,16 +57,16 @@ export default function EmployerNotifications({
   });
 
   return (
-    <main className="flex-1 p-6 space-y-6">
+    <div className="app-dashboard-stack w-full">
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 
       <div>
-        <h2 className="text-xl font-bold">
+        <h2 className="app-page-title">
           Employer Notifications
         </h2>
 
-        <p className="text-sm text-muted-foreground">
+        <p className="app-page-description">
           Updates about applications, workers, and system activity
         </p>
       </div>
@@ -254,6 +254,6 @@ export default function EmployerNotifications({
       </Dialog>
 
 
-    </main>
+    </div>
   );
 }

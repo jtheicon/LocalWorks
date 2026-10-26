@@ -18,6 +18,7 @@ import ApplicationDetailsModal from "./ApplicationDetailsModal";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
 import EmployerConversationModal from "./EmployerConversationModal";
+import WorkerPageHeader from "@/components/worker/WorkerPageHeader";
 
 interface Application {
   id: number;
@@ -171,10 +172,10 @@ const MyApplications = () => {
 
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-2">My Applications</h2>
-        <p className="text-muted-foreground">Track the status of your job applications</p>
-      </div>
+      <WorkerPageHeader
+        title="My applications"
+        description="Track each application from submission to interview or decision."
+      />
 
       <div className="grid gap-4">
         {ViewApplications.map((application) => (

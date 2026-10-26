@@ -8,12 +8,15 @@ import {
   AdminRejectReactivation,
   AdminManualReactivate,
   AdminRunInactivityJob,
+  AdminBroadcastLifecycleRefresh,
 } from "../controller/accountLifecycle";
 import { Router } from "express";
 import authorized from "../middleware/authorized";
 import { admin } from "../middleware/roles";
 
 const router = Router()
+
+router.post("/inactivity/broadcast", AdminBroadcastLifecycleRefresh)
 
 // GET Routes:
 router.get("/dashboard", authorized, admin, Dashboard)

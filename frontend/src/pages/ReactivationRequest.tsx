@@ -46,7 +46,10 @@ const ReactivationRequest = () => {
             <CardTitle>Invalid link</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-4">
-            <p>This reactivation link is missing or invalid. Check the email we sent when your account was deactivated.</p>
+            <p>
+              This reactivation link is missing or invalid. Reactivation applies only to accounts deactivated by an
+              administrator. Long-term inactivity leads to permanent deletion — register again to return.
+            </p>
             <Button asChild variant="outline">
               <Link to="/login">Go to sign in</Link>
             </Button>
@@ -81,13 +84,12 @@ const ReactivationRequest = () => {
     <div className="min-h-screen flex items-center justify-center p-6 bg-muted/30">
       <Card className="max-w-lg w-full">
         <CardHeader>
-          <CardTitle>Account reactivation</CardTitle>
+          <CardTitle>Account reactivation (admin deactivation)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <p>
-            Hello <strong>{data.displayName}</strong>, your LocalWorks account is currently{" "}
-            <strong>deactivated</strong>
-            {data.deactivationReason === "inactivity" ? " due to inactivity" : ""}.
+            Hello <strong>{data.displayName}</strong>, your LocalWorks account was{" "}
+            <strong>deactivated by an administrator</strong> and is not deleted.
           </p>
           {submitted || pending ? (
             <p className="text-muted-foreground">

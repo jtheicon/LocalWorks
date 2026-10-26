@@ -5,8 +5,24 @@ import path from "node:path";
 import mammoth from "mammoth";
 
 // Google Gemini (free tier from https://aistudio.google.com). Set GEMINI_API_KEY in backend/.env.
-// GEMINI_MODEL lets you switch models without code changes if the default is retired.
-export const MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+// IDs must match your key's ModelService list (no bare gemini-2.0-flash / gemini-1.5-flash on v1beta).
+const FALLBACK_GEMINI_MODELS = [
+  "gemini-3.5-flash",
+  "gemini-3.6-flash",
+  "gemini-3.7-flash",
+  "gemini-3.8-flash",
+  "gemini-flash-latest",
+] as const;
+
+export const geminiModelChain = (): string[] => {
+  const preferred = process.env.GEMINI_MODEL?.trim();
+  const chain = preferred
+    ? [preferred, ...FALLBACK_GEMINI_MODELS]
+    : [...FALLBACK_GEMINI_MODELS];
+  return [...new Set(chain)];
+};
+
+export const MODEL = geminiModelChain()[0] ?? "gemini-3.5-flash";
 
 let client: GoogleGenAI | null = null;
 const getClient = () => {
@@ -119,6 +135,14 @@ const fileToPart = async (filePath: string): Promise<Part | null> => {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const retryableGeminiStatus = (status: number) =>
+  status === 429 || status === 503 || status === 500 || status === 502;
+
+const geminiApiStatus = (error: unknown): number =>
+  error instanceof ApiError ? (error.status ?? 0) : 0;
+
 /* -------------------------------------------------------------------------- */
 /*                                   Calls                                    */
 /* -------------------------------------------------------------------------- */
@@ -129,28 +153,89 @@ const toGeminiSchema = (schema: z.ZodType) => {
   return rest;
 };
 
-export const ask = async <T extends z.ZodType>(system: string, parts: Part[], schema: T): Promise<z.infer<T>> => {
-  const response = await getClient().models.generateContent({
-    model: MODEL,
-    contents: [{ role: "user", parts }],
-    config: {
-      systemInstruction: system,
-      temperature: 0, // same document -> same verdict
-      maxOutputTokens: 512,
-      responseMimeType: "application/json",
-      responseJsonSchema: toGeminiSchema(schema),
-    },
-  });
+/** Strip optional markdown fences; Gemini usually returns raw JSON but fences appear when truncated. */
+export const parseGeminiJson = (text: string): unknown => {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return JSON.parse((fenced?.[1] ?? trimmed).trim());
+};
 
-  const blocked = response.promptFeedback?.blockReason;
-  if (blocked) throw new Error(`Gemini blocked the request: ${blocked}`);
+const generateJson = async (system: string, parts: Part[], schema: z.ZodType, maxOutputTokens: number) => {
+  const models = geminiModelChain();
+  let lastError: unknown;
 
-  const text = response.text;
-  if (!text) {
-    throw new Error(`Gemini returned no answer (finish reason: ${response.candidates?.[0]?.finishReason ?? "unknown"})`);
+  for (const model of models) {
+    for (let apiAttempt = 1; apiAttempt <= 4; apiAttempt++) {
+      try {
+        const response = await getClient().models.generateContent({
+          model,
+          contents: [{ role: "user", parts }],
+          config: {
+            systemInstruction: system,
+            temperature: 0, // same document -> same verdict
+            maxOutputTokens,
+            responseMimeType: "application/json",
+            responseJsonSchema: toGeminiSchema(schema),
+          },
+        });
+
+        const blocked = response.promptFeedback?.blockReason;
+        if (blocked) throw new Error(`Gemini blocked the request: ${blocked}`);
+
+        const text = response.text;
+        const finishReason = response.candidates?.[0]?.finishReason;
+        if (!text) {
+          throw new Error(`Gemini returned no answer (finish reason: ${finishReason ?? "unknown"})`);
+        }
+        if (model !== models[0]) {
+          console.warn(`[ai] used fallback model ${model} (primary ${models[0]} unavailable)`);
+        }
+        return { text, finishReason, model };
+      } catch (error) {
+        lastError = error;
+        const status = geminiApiStatus(error);
+        if (status === 404) break; // wrong model id — try next in chain
+        if (retryableGeminiStatus(status) && apiAttempt < 4) {
+          await sleep(1500 * apiAttempt);
+          continue;
+        }
+        if (retryableGeminiStatus(status)) break; // exhausted retries on this model
+        throw error;
+      }
+    }
   }
-  // Validate instead of trusting the model's JSON blindly.
-  return schema.parse(JSON.parse(text));
+  throw lastError ?? new Error("Gemini request failed");
+};
+
+export const ask = async <T extends z.ZodType>(
+  system: string,
+  parts: Part[],
+  schema: T,
+  options?: { maxOutputTokens?: number },
+): Promise<z.infer<T>> => {
+  let maxOutputTokens = options?.maxOutputTokens ?? 1024;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { text, finishReason, model: modelUsed } = await generateJson(system, parts, schema, maxOutputTokens);
+    void modelUsed; // parsed path only; model recorded on verification wrappers via MODEL / fallback log
+    if (finishReason === "MAX_TOKENS" && attempt === 0) {
+      maxOutputTokens = Math.min(maxOutputTokens * 2, 8192);
+      continue;
+    }
+    if (finishReason === "MAX_TOKENS") {
+      throw new Error("Gemini response was truncated (output token limit reached)");
+    }
+    try {
+      return schema.parse(parseGeminiJson(text));
+    } catch (error) {
+      const retryParse = attempt === 0 && error instanceof SyntaxError;
+      if (retryParse) {
+        maxOutputTokens = Math.min(maxOutputTokens * 2, 8192);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Gemini JSON response could not be parsed");
 };
 
 const unavailable = (reason: string): VerificationResult => ({
@@ -161,7 +246,11 @@ const unavailable = (reason: string): VerificationResult => ({
   checkedAt: new Date(),
 });
 
-const fromVerdict = (v: { decision: "approve" | "needs_review"; confidence: number; reasons: string[] }, details?: Record<string, unknown>): VerificationResult => {
+const fromVerdict = (
+  v: { decision: "approve" | "needs_review"; confidence: number; reasons: string[] },
+  details?: Record<string, unknown>,
+  modelUsed?: string,
+): VerificationResult => {
   const lowConfidence = v.decision === "approve" && v.confidence < MIN_APPROVE_CONFIDENCE;
   return {
     method: "ai",
@@ -169,7 +258,7 @@ const fromVerdict = (v: { decision: "approve" | "needs_review"; confidence: numb
     confidence: v.confidence,
     reasons: lowConfidence ? [...v.reasons, "AI confidence below auto-approval threshold"] : v.reasons,
     details,
-    model: MODEL,
+    model: modelUsed ?? MODEL,
     checkedAt: new Date(),
   };
 };
@@ -178,8 +267,10 @@ export const describeError = (error: unknown) => {
   if (error instanceof NotConfiguredError) return "AI verification is not configured (set GEMINI_API_KEY in backend/.env)";
   if (error instanceof ApiError) {
     if (error.status === 400 || error.status === 401 || error.status === 403) return `AI verification rejected the request (API error ${error.status}) - check GEMINI_API_KEY / GEMINI_MODEL`;
-    if (error.status === 404) return `AI model "${MODEL}" not found - set GEMINI_MODEL to a current model`;
+    if (error.status === 404)
+      return "AI model not available for this API key — set GEMINI_MODEL to one from Google AI Studio (e.g. gemini-3.5-flash)";
     if (error.status === 429) return "AI verification hit the free-tier rate limit - try again later";
+    if (error.status === 503) return "AI verification is temporarily busy - try again in a few minutes";
     return `AI verification failed (API error ${error.status})`;
   }
   if (error instanceof z.ZodError || error instanceof SyntaxError) return "AI returned an invalid answer";
@@ -316,7 +407,7 @@ export const extractResume = async (filePath: string): Promise<ExtractionResult<
     const { decision, confidence, reasons, ...fields } = await ask(RESUME_EXTRACT_SYSTEM, [
       file,
       { text: `Skill categories: ${SKILL_CATEGORIES.join(", ")}\nToday's date: ${today()}\n\nCheck this resume and extract the fields.` },
-    ], ResumeExtraction);
+    ], ResumeExtraction, { maxOutputTokens: 2048 });
 
     const verdict = fields.full_name.trim()
       ? { decision, confidence, reasons }
@@ -336,7 +427,7 @@ export const extractPermit = async (filePath: string, industries: string[]): Pro
     const { decision, confidence, reasons, ...fields } = await ask(PERMIT_EXTRACT_SYSTEM, [
       file,
       { text: `Industries: ${industries.join(", ") || "(none yet)"}\nToday's date: ${today()}\n\nCheck this business document and extract the fields.` },
-    ], PermitExtraction);
+    ], PermitExtraction, { maxOutputTokens: 2048 });
 
     const verdict = fields.business_name.trim()
       ? { decision, confidence, reasons }

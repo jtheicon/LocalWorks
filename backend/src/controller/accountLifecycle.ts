@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import Worker from "../model/Worker";
@@ -16,6 +17,8 @@ import {
   sendReactivationRejectedEmail,
   notifyAdminReactivationRequest,
   accountLifecycleEmail,
+  accountDisplayName,
+  lifecycleMailRecipientName,
 } from "../services/inactivityEmails";
 import { resetInactivityCycleOnReactivation } from "../services/activityTracking";
 import { userModelByRole } from "../services/userModelByRole";
@@ -66,13 +69,21 @@ export const GetReactivationContext = async (req: Request, res: Response) => {
   if (!user || user.status !== "not_active") {
     return res.status(400).json({ success: false, message: "This account is not eligible for reactivation via this link." });
   }
-  if ((user as any).deactivation?.reason !== "inactivity") {
+  const deactReason = (user as any).deactivation?.reason;
+  if (deactReason === "inactivity") {
+    return res.status(400).json({
+      success: false,
+      message:
+        "Accounts deactivated for long-term inactivity are permanently deleted under the current policy. Please register a new account to use LocalWorks again.",
+    });
+  }
+  if (deactReason !== "admin" && deactReason !== undefined) {
     return res.status(400).json({ success: false, message: "This account is not eligible for reactivation via this link." });
   }
 
   return res.status(200).json({
     success: true,
-    displayName: (user as any).name ?? (user as any).company ?? "User",
+    displayName: accountDisplayName(user as any, validation.role),
     role: validation.role,
     deactivationReason: (user as any).deactivation?.reason ?? "unknown",
     reactivationRequestStatus: (user as any).reactivationRequestStatus ?? null,
@@ -95,7 +106,15 @@ export const SubmitReactivationRequest = async (req: Request, res: Response) => 
   if (!user || user.status !== "not_active") {
     return res.status(400).json({ success: false, message: "Account not eligible for reactivation." });
   }
-  if (user.get("deactivation")?.reason !== "inactivity") {
+  const deactReason = user.get("deactivation")?.reason;
+  if (deactReason === "inactivity") {
+    return res.status(400).json({
+      success: false,
+      message:
+        "This account is no longer eligible for reactivation. Long-term inactivity results in permanent deletion — create a new account instead.",
+    });
+  }
+  if (deactReason !== "admin" && deactReason != null) {
     return res.status(400).json({ success: false, message: "Account not eligible for reactivation." });
   }
 
@@ -119,11 +138,19 @@ export const SubmitReactivationRequest = async (req: Request, res: Response) => 
 
   await consumeReactivationToken(validation.tokenId);
 
-  const name = updated.get("name") ?? updated.get("company") ?? "User";
-  await sendReactivationSubmittedEmail(
-    accountLifecycleEmail(updated.email, updated.get("inactivityEmailOverride")),
-    name,
+  const to = accountLifecycleEmail(updated.email, updated.get("inactivityEmailOverride"));
+  const name = await lifecycleMailRecipientName(
+    {
+      email: updated.email,
+      inactivityEmailOverride: updated.get("inactivityEmailOverride"),
+      name: updated.get("name"),
+      company: updated.get("company"),
+      owner: updated.get("owner"),
+    },
+    validation.role,
+    to,
   );
+  await sendReactivationSubmittedEmail(to, name);
 
   const label = `${name} (${validation.role}, ${updated.email})`;
   await AdminNotification.create({
@@ -173,7 +200,7 @@ export const mapUserLifecycleRow = (doc: any, role: "worker" | "employer") => {
   return {
     _id: String(doc._id),
     role,
-    name: doc.name ?? doc.company,
+    name: accountDisplayName(doc, role),
     email: doc.email,
     status: doc.status,
     lifecycle,
@@ -194,11 +221,23 @@ export const mapUserLifecycleRow = (doc: any, role: "worker" | "employer") => {
       isEligibleForInactivityAutomation(doc) &&
       policyAt != null &&
       wholeMonthsSince(policyAt) >= DEACTIVATION_MONTHS,
+    eligibleForAutoDeletion:
+      isEligibleForInactivityAutomation(doc) &&
+      policyAt != null &&
+      wholeMonthsSince(policyAt) >= DEACTIVATION_MONTHS,
     lastInactivityNotificationAt: doc.lastInactivityNotificationAt ?? null,
     inactivityWarningStage: doc.inactivityWarningStage ?? 0,
     nextMilestoneMonths: milestone,
     nextScheduledAt:
-      policyAt && milestone ? scheduledActionDate(policyAt, milestone) : null,
+      displayAt && milestone ? scheduledActionDate(displayAt, milestone) : null,
+    lastStageDueAt:
+      displayAt && (doc.inactivityWarningStage ?? 0) > 0
+        ? scheduledActionDate(displayAt, doc.inactivityWarningStage)
+        : null,
+    deletionDueAt:
+      displayAt && isEligibleForInactivityAutomation(doc)
+        ? scheduledActionDate(displayAt, DEACTIVATION_MONTHS)
+        : null,
     deactivation: doc.deactivation ?? null,
     reactivationRequestedAt: doc.reactivationRequestedAt ?? null,
     reactivationRequestStatus: doc.reactivationRequestStatus ?? null,
@@ -229,7 +268,7 @@ export const AdminListUsersLifecycle = async (req: Request, res: Response) => {
       const docs = await userModelByRole(r)
         .find({ status: { $ne: "deleted" } })
         .select(
-          "name company email status lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt deactivation reactivationRequestedAt reactivationRequestStatus",
+          "name company owner email status lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt deactivation reactivationRequestedAt reactivationRequestStatus",
         )
         .lean();
       for (const d of docs) rows.push(mapUserRow(d, r));
@@ -290,11 +329,19 @@ export const AdminApproveReactivation = async (req: Request, res: Response) => {
   }
 
   await resetInactivityCycleOnReactivation(role, userId, req.user?.id);
-  const name = user.get("name") ?? user.get("company") ?? "User";
-  await sendReactivationApprovedEmail(
-    accountLifecycleEmail(user.email, user.get("inactivityEmailOverride")),
-    name,
+  const to = accountLifecycleEmail(user.email, user.get("inactivityEmailOverride"));
+  const name = await lifecycleMailRecipientName(
+    {
+      email: user.email,
+      inactivityEmailOverride: user.get("inactivityEmailOverride"),
+      name: user.get("name"),
+      company: user.get("company"),
+      owner: user.get("owner"),
+    },
+    role,
+    to,
   );
+  await sendReactivationApprovedEmail(to, name);
 
   emitAdminUserLifecycleUpdated("reactivation", { userId, role });
 
@@ -321,9 +368,20 @@ export const AdminRejectReactivation = async (req: Request, res: Response) => {
   });
   await user.save();
 
-  const name = user.get("name") ?? user.get("company") ?? "User";
+  const to = accountLifecycleEmail(user.email, user.get("inactivityEmailOverride"));
+  const name = await lifecycleMailRecipientName(
+    {
+      email: user.email,
+      inactivityEmailOverride: user.get("inactivityEmailOverride"),
+      name: user.get("name"),
+      company: user.get("company"),
+      owner: user.get("owner"),
+    },
+    role,
+    to,
+  );
   let reactivationUrl: string | undefined;
-  if (user.get("deactivation")?.reason === "inactivity") {
+  if (user.get("deactivation")?.reason === "admin") {
     try {
       const { raw } = await issueReactivationToken(userId, role);
       const origin =
@@ -335,12 +393,7 @@ export const AdminRejectReactivation = async (req: Request, res: Response) => {
       console.error("[reactivation] failed to issue token after reject:", err);
     }
   }
-  await sendReactivationRejectedEmail(
-    accountLifecycleEmail(user.email, user.get("inactivityEmailOverride")),
-    name,
-    reason,
-    reactivationUrl,
-  );
+  await sendReactivationRejectedEmail(to, name, reason, reactivationUrl);
 
   emitAdminUserLifecycleUpdated("reactivation", { userId, role });
 
@@ -364,11 +417,19 @@ export const AdminManualReactivate = async (req: Request, res: Response) => {
     await M.updateOne({ _id: userId }, { $set: { reactivationRejectionReason: reason } });
   }
 
-  const name = user.get("name") ?? user.get("company") ?? "User";
-  await sendReactivationApprovedEmail(
-    accountLifecycleEmail(user.email, user.get("inactivityEmailOverride")),
-    name,
+  const to = accountLifecycleEmail(user.email, user.get("inactivityEmailOverride"));
+  const name = await lifecycleMailRecipientName(
+    {
+      email: user.email,
+      inactivityEmailOverride: user.get("inactivityEmailOverride"),
+      name: user.get("name"),
+      company: user.get("company"),
+      owner: user.get("owner"),
+    },
+    role,
+    to,
   );
+  await sendReactivationApprovedEmail(to, name);
 
   emitAdminUserLifecycleUpdated("reactivation", { userId, role });
 
@@ -421,7 +482,7 @@ export const AdminGetUserLifecycle = async (req: Request, res: Response) => {
     const doc = await userModelByRole(role)
       .findById(userId)
       .select(
-        "name company email status lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt deactivation reactivationRequestedAt reactivationRequestStatus",
+        "name company owner email status lastActiveAt updatedAt createdAt inactivityWarningStage lastInactivityNotificationAt deactivation reactivationRequestedAt reactivationRequestStatus",
       )
       .lean();
     if (!doc || doc.status === "deleted") {
@@ -443,4 +504,30 @@ export const AdminRunInactivityJob = async (_req: Request, res: Response) => {
   }
   const result = await runInactivityMonitor();
   return res.status(200).json({ success: true, result });
+};
+
+const secretsEqual = (provided: string, expected: string) => {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+};
+
+/** Local seeds / scripts only — no session cookie; guarded by SEED_* env secret. */
+export const AdminBroadcastLifecycleRefresh = (req: Request, res: Response) => {
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.ALLOW_SEED_LIFECYCLE_BROADCAST !== "true"
+  ) {
+    return res.status(404).json({ success: false, message: "Not found." });
+  }
+  const header = req.get("x-lifecycle-broadcast")?.trim() ?? "";
+  const secret =
+    process.env.SEED_LIFECYCLE_BROADCAST_SECRET?.trim() ||
+    process.env.SEED_CONFIRM_PRODUCTION?.trim();
+  if (!secret || !secretsEqual(header, secret)) {
+    return res.status(403).json({ success: false, message: "Forbidden." });
+  }
+  emitAdminUserLifecycleUpdated("inactivity_job");
+  return res.status(200).json({ success: true });
 };

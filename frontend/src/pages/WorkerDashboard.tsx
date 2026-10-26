@@ -29,6 +29,8 @@ import { toast } from "sonner";
 import { Bell } from "lucide-react";
 import axios from "axios";
 import { API_ORIGIN } from "@/lib/apiOrigin";
+import { canWorkerApply } from "@/lib/workerJobApply";
+import TabCountBadge from "@/components/worker/TabCountBadge";
 
 const JobListings = lazy(() => import("@/components/worker/JobListings"));
 const MyApplications = lazy(() => import("@/components/worker/MyApplications"));
@@ -42,6 +44,26 @@ axios.defaults.withCredentials = true;
 
 const fetchWorkerJobs = async () => {
   const { data } = await axios.get(`${API_ORIGIN}/api/pro/viewJobs`, { withCredentials: true });
+  return data;
+};
+
+const fetchWorkerApplications = async () => {
+  const { data } = await axios.get(`${API_ORIGIN}/api/pro/viewApplications`, { withCredentials: true });
+  return data;
+};
+
+const fetchWorkerContacts = async () => {
+  const { data } = await axios.get(`${API_ORIGIN}/api/pro/contacts`, { withCredentials: true });
+  return data;
+};
+
+const fetchWorkerReports = async () => {
+  const { data } = await axios.get(`${API_ORIGIN}/api/pro/reports`, { withCredentials: true });
+  return data;
+};
+
+const fetchWorkerAssignments = async () => {
+  const { data } = await axios.get(`${API_ORIGIN}/api/pro/worker-assignments`, { withCredentials: true });
   return data;
 };
 
@@ -88,6 +110,43 @@ const WorkerDashboard = () => {
     });
   }, [queryClient]);
 
+  const { data: jobsData } = useQuery({
+    queryKey: ["job"],
+    queryFn: fetchWorkerJobs,
+    staleTime: 60_000,
+  });
+
+  const { data: applicationsPayload } = useQuery({
+    queryKey: ["ViewApplications"],
+    queryFn: fetchWorkerApplications,
+    staleTime: 30_000,
+  });
+
+  const { data: contactsPayload } = useQuery({
+    queryKey: ["contacts"],
+    queryFn: fetchWorkerContacts,
+    staleTime: 30_000,
+  });
+
+  const { data: reportsPayload } = useQuery({
+    queryKey: ["workerReports"],
+    queryFn: fetchWorkerReports,
+    staleTime: 30_000,
+  });
+
+  const { data: assignmentsPayload } = useQuery({
+    queryKey: ["workerAssignments"],
+    queryFn: fetchWorkerAssignments,
+    staleTime: 30_000,
+  });
+
+  const openJobsCount =
+    (jobsData?.jobs ?? []).filter((job: Parameters<typeof canWorkerApply>[0]) => canWorkerApply(job)).length;
+  const applicationCount = applicationsPayload?.Applications?.length ?? 0;
+  const contactCount = contactsPayload?.contacts?.length ?? 0;
+  const reportCount = reportsPayload?.reports?.length ?? 0;
+  const assignmentCount = assignmentsPayload?.workerAssignments?.length ?? 0;
+
   const { data: notifications = [] } = useQuery({
     queryKey: ["workerNotifications"],
     queryFn: fetchNotifications,
@@ -133,7 +192,7 @@ const WorkerDashboard = () => {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="app-shell-width py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center p-1 overflow-hidden">
               <img src={logo} alt="LocalWorks" className="h-full w-full object-cover rounded-full" />
@@ -197,37 +256,43 @@ const WorkerDashboard = () => {
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="w-fit h-auto flex-wrap justify-start gap-1">
-            <TabsTrigger value="jobs" className="gap-2">
+      <main className="app-dashboard-main pb-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="app-dashboard-stack w-full max-w-[1600px] mx-auto">
+          <TabsList className="w-full h-auto flex flex-wrap justify-start gap-1.5 p-1">
+            <TabsTrigger value="jobs" className="group gap-2">
               <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">Find Jobs</span>
+              <TabCountBadge count={openJobsCount} />
             </TabsTrigger>
 
-            <TabsTrigger value="applications" className="gap-2">
-              <Briefcase className="mr-2 h-4 w-4" />
+            <TabsTrigger value="applications" className="group gap-2">
+              <Briefcase className="w-4 h-4" />
               <span className="hidden sm:inline">My Applications</span>
+              <TabCountBadge count={applicationCount} />
             </TabsTrigger>
 
-            <TabsTrigger value="contacts" className="gap-2">
+            <TabsTrigger value="contacts" className="group gap-2">
               <Phone className="w-4 h-4" />
               <span className="hidden sm:inline">Contacts</span>
+              <TabCountBadge count={contactCount} />
             </TabsTrigger>
 
-            <TabsTrigger value="reports" className="gap-2">
+            <TabsTrigger value="reports" className="group gap-2">
               <Flag className="w-4 h-4" />
               <span className="hidden sm:inline">Reports</span>
+              <TabCountBadge count={reportCount} />
             </TabsTrigger>
 
-            <TabsTrigger value="notifications" className="gap-2">
+            <TabsTrigger value="notifications" className="group gap-2">
               <Bell className="w-4 h-4" />
               <span className="hidden sm:inline">Notifications</span>
+              <TabCountBadge count={unreadCount} />
             </TabsTrigger>
 
-            <TabsTrigger value="workerAssignments" className="gap-2">
+            <TabsTrigger value="workerAssignments" className="group gap-2">
               <Flag className="w-4 h-4" />
               <span className="hidden sm:inline">Worker Assignments</span>
+              <TabCountBadge count={assignmentCount} />
             </TabsTrigger>
           </TabsList>
 

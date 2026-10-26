@@ -1,7 +1,7 @@
-import { Outlet } from "react-router";
+import { Outlet, useNavigate } from "react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { socket } from "@/socket";
 import {
@@ -16,31 +16,44 @@ interface Notification {
   title: string;
 }
 
+const fetchAdminSession = async () => {
+  const res = await axios.get(`${ADMIN_API}/profile`, { withCredentials: true });
+  return res.data as { AdminProfile: { _id: string } };
+};
+
 export default function AdminLayout() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  // 1. establish socket identity (IMPORTANT)
+  const {
+    data: session,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: adminQueryKeys.adminSession,
+    queryFn: fetchAdminSession,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
-    const initAdminSocket = async () => {
-      try {
-        const res = await axios.get(`${ADMIN_API}/profile`, { withCredentials: true });
+    if (!isError) return;
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+    if (status === 401 || status === 403) {
+      navigate("/admin", { replace: true });
+    }
+  }, [isError, error, navigate]);
 
-        const adminId = res.data.AdminProfile._id;
+  useEffect(() => {
+    const adminId = session?.AdminProfile?._id;
+    if (!adminId) return;
 
-        socket.disconnect();
-        socket.auth = { adminId };
-        socket.connect();
+    socket.disconnect();
+    socket.auth = { adminId };
+    socket.connect();
+  }, [session?.AdminProfile?._id]);
 
-        console.log("Admin socket connected with:", adminId);
-      } catch (err) {
-        console.error("Failed to init admin socket");
-      }
-    };
-
-    initAdminSocket();
-  }, []);
-
-  // 2. connection debugging (optional but useful)
   useEffect(() => {
     socket.on("connect", () => {
       console.log("Admin socket connected:", socket.id);
@@ -56,7 +69,6 @@ export default function AdminLayout() {
     };
   }, []);
 
-  // 3. Realtime: keep dashboard account health, user management, and jobs in sync
   useEffect(() => {
     const onLifecycleUpdated = () => {
       invalidateAdminLifecycleData(queryClient);
@@ -88,6 +100,18 @@ export default function AdminLayout() {
       socket.off("notification:new", handleNewNotification);
     };
   }, [queryClient]);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        Checking admin session…
+      </div>
+    );
+  }
+
+  if (isError || !session) {
+    return null;
+  }
 
   return <Outlet />;
 }

@@ -40,9 +40,12 @@ All seeds live under `src/scripts/`. Run **`npm run seed`** from `backend/` to p
 |-------------|--------|---------|
 | `seed:jobs` | `seedJobs.ts` | Three demo jobs (PENDING / ACCEPTED / DECLINED) for one **existing** employer |
 | `seed:demo` | `seedDemo.ts` | Full presentation dataset (users, jobs, apps, messages, reports, ratings) |
-| `seed:inactivity` | `seedInactivityDemo.ts` | Account inactivity / reactivation demo accounts |
+| `seed:inactivity` | `seedInactivityDemo.ts` | Inactivity warnings, 6-month deletion, admin reactivation demo |
+| `cleanup:stale-applications` | `cleanupStaleEmployerApplications.ts` | Remove job applications whose worker was deleted; restores open positions when needed |
 
 Shared safety env for writes: `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`. Demo logins also need `SEED_DEMO_PASSWORD` (min 8 chars) for `seed:demo` and `seed:inactivity`.
+
+Employers also get this cleanup automatically when they open **Applications** or **Browse Workers → My Workers** (same rules as the script). Optional one-shot for every employer: `npm run cleanup:stale-applications` (dry run), then `--apply` with `SEED_CONFIRM_PRODUCTION`. Limit to one login with `CLEANUP_EMPLOYER_EMAIL`.
 
 ### `seed:jobs` — dashboard job counts
 
@@ -74,12 +77,15 @@ Review the preview and confirm the database target before applying.
 
 Preview (no writes): `npm run seed:demo`. Apply: `npm run seed:demo -- --apply`. Remove demo docs only: `npm run seed:demo -- --reset`.
 
-### `seed:inactivity` — inactivity policy demo
+### `seed:inactivity` — inactivity & deletion demo
 
-Preview: `npm run seed:inactivity`. Apply: `npm run seed:inactivity -- --apply`. Reset: `npm run seed:inactivity -- --reset`. Optional: `--apply --run-job` resets only the seeded overdue worker to its test state, then runs the monitor for only that worker so it will not deactivate unrelated accounts. This makes the email test repeatable. The seed keeps the worker's registered address at a reserved `.test` address and routes lifecycle emails to `INACTIVITY_DEMO_EMAIL` when set. This includes inactivity warnings, deactivation, request receipt, and admin decision notices; it will not overwrite or reuse an existing account email. For Gmail SMTP, set `EMAIL_USER` to the sender account and `EMAIL_PASS` to its Google App Password (not the account login password). Set `EMAIL_OWNER` to that Gmail address or a verified Gmail send-as alias, and `APP_URL` to the frontend origin so email links open the application. Requires a **Construction** industry (created by `seed:demo` or on first server start).
-Applying the seed also refreshes the dedicated active worker login: `worker-active@localworks-inactivity.test`, using the password in `SEED_DEMO_PASSWORD`. Use the **Worker** login tab. This is separate from `INACTIVITY_DEMO_EMAIL`, which is only the lifecycle notification inbox, and from the already-overdue worker that is deactivated to test reactivation.
+Preview: `npm run seed:inactivity`. Apply: `npm run seed:inactivity -- --apply`. Reset: `npm run seed:inactivity -- --reset`.
 
-#### Six-month deactivation and reactivation email test
+Optional `--apply --run-job` resets only the seeded overdue worker, runs the monitor for **that worker only**, and sends the **deletion** email to `INACTIVITY_DEMO_EMAIL` when set. Lifecycle emails use `EMAIL_*` and links use `APP_URL`. Requires a **Construction** industry (`seed:demo` or first server start).
+
+Active demo login: `worker-active@localworks-inactivity.test` with `SEED_DEMO_PASSWORD`. Admin **reactivation** demo uses `worker-reactivation-pending@localworks-inactivity.test` (admin deactivation, not inactivity deletion).
+
+#### Six-month deletion email test
 
 This scenario uses a separate demo worker; it does not register your Gmail address as a worker or change the existing Gmail account. Set a new temporary `SEED_DEMO_PASSWORD` (do not reuse a password shared in chat), set `INACTIVITY_DEMO_EMAIL` to a mailbox you control, and make sure the sender uses a valid Gmail App Password. In PowerShell, from `backend\`:
 
@@ -97,7 +103,7 @@ Check the preview and verify `MONGO_URI` in the local environment targets a **te
 npm run seed:inactivity -- --apply --run-job
 ```
 
-The job resets and processes only `worker-due-deactivation@localworks-inactivity.test`, whose last qualifying activity is six calendar months old. Success should report `processed=1, deactivated=1, emailFailures=0`. Check the mailbox (and spam folder) for the message with the one-time reactivation-request link. Worker login for this demo address should return `ACCOUNT_DEACTIVATED` until reactivated; login itself does not send the request link. Open the email link, submit the request, then approve Mika DueDeactivation under **Admin dashboard → Reactivation requests**. After approval, sign in with the demo email and the temporary seed password. `--apply --run-job` can be rerun to resend a fresh link; each rerun resets only this fixture and invalidates its prior unused link.
+The job resets and processes only `worker-due-deactivation@localworks-inactivity.test` (six calendar months idle). Success: `processed=1, deleted=1, emailFailures=0`. Check `INACTIVITY_DEMO_EMAIL` for the **account deleted** notice. Worker login should return **`ACCOUNT_DELETED`** (403). Re-register to use the platform again. `--apply --run-job` can be rerun; it only touches that fixture.
 
 To test with an existing worker account instead of the reserved demo address, set `INACTIVITY_DEMO_ACCOUNT_EMAIL` to that worker's email and preview the target first:
 
@@ -107,20 +113,60 @@ $env:INACTIVITY_DEMO_EMAIL = 'your-notification-inbox@example.com'
 npm run seed:inactivity -- --use-email-account
 ```
 
-Verify the preview names the intended worker, and confirm `MONGO_URI` is the intended test database. Applying this test changes that worker's inactivity/deactivation fields but does not change its password. It temporarily sets the worker active with a six-month-old activity timestamp, immediately runs the inactivity monitor for that worker only, then sends the reactivation link to `INACTIVITY_DEMO_EMAIL`. It refuses deleted, pending, and admin-deactivated accounts. Only proceed for a worker account you own:
+Verify the preview names the intended worker, and confirm `MONGO_URI` is the intended test database. Applying this test changes inactivity fields but not the password. It sets the worker active with six-month-old activity, runs the monitor for that worker only, and sends the deletion email to `INACTIVITY_DEMO_EMAIL`. It refuses deleted, pending, and admin-deactivated accounts. Only proceed for a worker account you own:
 
 ```powershell
 $env:SEED_CONFIRM_PRODUCTION = 'I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION'
 npm run seed:inactivity -- --apply --run-job --use-email-account
 ```
 
-Expected result: `processed=1, deactivated=1, emailFailures=0`. The selected worker must be blocked from new login until an admin approves the reactivation request. The email contains the one-time reactivation request link; signing in does not trigger a new link.
+Expected result: `processed=1, deleted=1, emailFailures=0`. Login returns `ACCOUNT_DELETED`; the user must sign up again.
 
 To refresh only the demo fixtures and active worker password without running the deactivation test, use `npm run seed:inactivity -- --apply`. Then verify the credentials against the same database used by the frontend API with `npm run seed:inactivity -- --check-login`. Set `WORKER_LOGIN_EMAIL` to check a different worker address; by default it checks `worker-active@localworks-inactivity.test`. The check is read-only and reports whether the account exists, is eligible to log in, and its password matches `SEED_DEMO_PASSWORD`; it never prints the password or hash.
 
-Use `WORKER_LOGIN_EMAIL=<address> npm run seed:inactivity -- --inspect-account` to read-only inspect whether the configured database has that email under a worker or employer account and report its status. Deleted accounts cannot log in. Re-registering a deleted email requires the normal worker signup flow, including email verification and a valid resume; the old soft-deleted history remains archived.
+Use `WORKER_LOGIN_EMAIL=<address> npm run seed:inactivity -- --inspect-account` to inspect account status read-only. Deleted inactivity accounts show `ACCOUNT_DELETED` on login; signup runs `releaseDeletedAccount()` to free the email.
 
-After the worker submits the email link, an administrator can review the request under **Admin dashboard → Reactivation requests**, then approve or reject it. The seed also creates an already-pending example for previewing that screen without sending an email.
+**Reactivation requests** (admin dashboard) apply only to **admin-deactivated** accounts. Six-month inactivity **deletes** the account instead.
+
+## Account inactivity & deletion (production)
+
+The backend schedules a job ~1 minute after startup, then **daily** (`scheduleAccountCleanup` in `server.ts`).
+
+| Month (idle) | Action |
+|--------------|--------|
+| 3 / 4 / 5 | Warning emails |
+| 6+ | Purge related MongoDB data, scrub profile, optional S3 delete, `status: deleted`, deletion email |
+
+**Environment** (see [`.env.example`](.env.example)):
+
+- `INACTIVITY_MONTHS` — default `6`
+- `ACCOUNT_CLEANUP=off` — disables the job
+- `ALLOW_MANUAL_INACTIVITY_JOB=true` — allows **Run cleanup now** in admin analytics when `NODE_ENV=production`
+- `AWS_*` — when set, deletion removes resume/photo/permit and related uploads from S3
+
+**Legacy:** Accounts still on `not_active` with `deactivation.reason: inactivity` from the old policy are migrated to **deleted + purge** on the next full job run (no second email).
+
+**Deploy checklist:** set `APP_URL`, `CORS_ORIGINS`, `NODE_ENV=production`, email vars, MongoDB URI; deploy backend + frontend together; confirm admin **Account health** shows zero **Legacy inactivity** after the first job.
+
+### Inactivity email testing (`seed:inactivity-email-*`)
+
+Use these to **send real SMTP mail** to **`INACTIVITY_LIFECYCLE_INBOX`** (default `joav.zabala.up@phinmaed.com`). Tour workers log in as `lifecycle-*@localworks-inactivity.test`; only the inbox address receives mail.
+
+This is separate from **`seed:inactivity`**, which seeds broader admin/UI demo accounts.
+
+Put in `.env` (or set in the shell): `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `SEED_DEMO_PASSWORD` (min 8 chars), and your usual `EMAIL_*` / `MONGO_URI`.
+
+| Goal | Command |
+|------|---------|
+| **3 month** warning email | `npm run seed:inactivity-email-3mo` |
+| **4 month** warning email | `npm run seed:inactivity-email-4mo` |
+| **5 month** final warning (deleted next month) | `npm run seed:inactivity-email-5mo` |
+| **6 month** deletion + account-deleted email | `npm run seed:inactivity-email-deletion` |
+| All four emails in one run | `npm run seed:inactivity-email-tour -- --apply --run-job` |
+| Preview policy (no DB writes) | `npm run seed:inactivity-email-tour` |
+| Remove tour workers | `npm run seed:inactivity-email-tour -- --reset` |
+
+Re-running a command is safe: fixtures are reset to the correct idle months/stages before each job (the 6‑month worker is recreated as `active` if you test deletion again).
 
 ## Cross-origin authentication
 

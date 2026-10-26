@@ -663,16 +663,26 @@ export const EmployerLogin = async (req: Request, res: Response) => {
     // Only reached after the password matched, so this does not reveal accounts to guessers.
     if (user.status === "pending") return res.status(403).json({ success: false, message: "Your account is still being verified. We will email you once it is active." })
     if (user.status === "not_active") {
-      const inactivity = user.get("deactivation")?.reason === "inactivity"
+      const reason = user.get("deactivation")?.reason;
       return res.status(403).json({
         success: false,
         code: "ACCOUNT_DEACTIVATED",
-        message: inactivity
-          ? "Your account was deactivated due to inactivity. Use the reactivation link in your email or submit a reactivation request for admin review."
-          : "Your account is not active. Contact an administrator.",
+        message:
+          reason === "admin"
+            ? "Your account was deactivated by an administrator. Contact support if you need access restored."
+            : "Your account is not active. Contact an administrator.",
       })
     }
-    if (user.status === "deleted") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
+    if (user.status === "deleted") {
+      const inactivityDeleted = user.get("deactivation")?.reason === "inactivity";
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_DELETED",
+        message: inactivityDeleted
+          ? "Your account was deleted due to inactivity. Create a new account to use LocalWorks again."
+          : "This account has been deleted. Contact an administrator if you need help.",
+      });
+    }
     recordQualifyingActivity(String(user._id), user.role, true)
 
     // console.log({
@@ -724,16 +734,26 @@ export const WorkerLogin = async (req: Request, res: Response) => {
     // Only reached after the password matched, so this does not reveal accounts to guessers.
     if (user.status === "pending") return res.status(403).json({ success: false, message: "Your account is still being verified. We will email you once it is active." })
     if (user.status === "not_active") {
-      const inactivity = user.get("deactivation")?.reason === "inactivity"
+      const reason = user.get("deactivation")?.reason;
       return res.status(403).json({
         success: false,
         code: "ACCOUNT_DEACTIVATED",
-        message: inactivity
-          ? "Your account was deactivated due to inactivity. Use the reactivation link in your email or submit a reactivation request for admin review."
-          : "Your account is not active. Contact an administrator.",
+        message:
+          reason === "admin"
+            ? "Your account was deactivated by an administrator. Contact support if you need access restored."
+            : "Your account is not active. Contact an administrator.",
       })
     }
-    if (user.status === "deleted") return res.status(400).json({ success: false, message: "Incorrect Email / Password" })
+    if (user.status === "deleted") {
+      const inactivityDeleted = user.get("deactivation")?.reason === "inactivity";
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_DELETED",
+        message: inactivityDeleted
+          ? "Your account was deleted due to inactivity. Create a new account to use LocalWorks again."
+          : "This account has been deleted. Contact an administrator if you need help.",
+      });
+    }
     recordQualifyingActivity(String(user._id), user.role, true)
 
     const token = jwt.sign({ id: user._id, name: user.name, role: user.role, status: user.status, email: user.email }, process.env.JWT_SECRET as string, {

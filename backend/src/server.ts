@@ -184,6 +184,6 @@ server.listen(port, async () => {
     recordPlatformHealth();
   }, 60000); // every 1 minute
 
-  // Deactivate accounts inactive for 6+ months: shortly after startup, then daily.
+  // Delete accounts inactive for 6+ months: shortly after startup, then daily.
   scheduleAccountCleanup();
 });

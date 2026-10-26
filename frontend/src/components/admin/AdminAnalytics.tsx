@@ -23,8 +23,10 @@ axios.defaults.withCredentials = true;
 
 interface CleanupPreview {
   inactivityMonths: number;
-  lastRun: { at: string; deactivated: number } | null;
+  lastRun: { at: string; deleted: number; legacyMigrated?: number } | null;
   candidates: { _id: string; role: string; name: string; email: string; lastActiveAt: string }[];
+  legacyInactivityDeactivated?: number;
+  deletedInactivityTombstones?: number;
 }
 
 // Categorical slots from the validated reference palette (light / dark steps).
@@ -240,7 +242,7 @@ const AdminAnalytics = () => {
 
         <ChartCard
           title="Account health"
-          subtitle={`Same rules as User management: 3/4/5‑month emails, ${cleanup?.inactivityMonths ?? 6}+ months qualifying idle → auto‑deactivate (daily job). Updates live with WebSocket.`}
+          subtitle={`Same rules as User management: 3/4/5‑month emails, ${cleanup?.inactivityMonths ?? 6}+ months qualifying idle → auto‑delete (daily job). Updates live with WebSocket.`}
         >
           <Table>
             <TableHeader>
@@ -250,7 +252,8 @@ const AdminAnalytics = () => {
                 <TableHead className="text-right text-xs">Inactivity pipeline</TableHead>
                 <TableHead className="text-right text-xs">Pending</TableHead>
                 <TableHead className="text-right text-xs">Deactivated</TableHead>
-                <TableHead className="text-right text-xs">Auto (inactivity)</TableHead>
+                <TableHead className="text-right text-xs">Admin hold</TableHead>
+                <TableHead className="text-right text-xs">Legacy inactivity</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -261,7 +264,8 @@ const AdminAnalytics = () => {
                   <TableCell className="text-right text-sm">{accounts[role].inactivityMonitoring}</TableCell>
                   <TableCell className="text-right text-sm">{accounts[role].pending}</TableCell>
                   <TableCell className="text-right text-sm">{accounts[role].deactivated}</TableCell>
-                  <TableCell className="text-right text-sm">{accounts[role].autoDeactivated}</TableCell>
+                  <TableCell className="text-right text-sm">{accounts[role].deactivatedAdmin ?? 0}</TableCell>
+                  <TableCell className="text-right text-sm">{accounts[role].legacyInactivityDeactivated ?? accounts[role].autoDeactivated ?? 0}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -270,10 +274,19 @@ const AdminAnalytics = () => {
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <div className="text-xs text-muted-foreground">
               <p>
-                <span className="font-semibold text-foreground">{candidates.length}</span> account(s) currently eligible for deactivation
+                <span className="font-semibold text-foreground">{candidates.length}</span> account(s) eligible for auto-deletion (6+ mo idle)
               </p>
+              {(cleanup?.legacyInactivityDeactivated ?? 0) > 0 && (
+                <p>
+                  <span className="font-semibold text-amber-700">{cleanup?.legacyInactivityDeactivated}</span> legacy
+                  inactivity-deactivated account(s) will migrate to deleted on the next job run.
+                </p>
+              )}
               <p>
-                Last run: {cleanup?.lastRun ? `${new Date(cleanup.lastRun.at).toLocaleString()} (${cleanup.lastRun.deactivated} deactivated)` : "not yet since server start"}
+                Last run:{" "}
+                {cleanup?.lastRun
+                  ? `${new Date(cleanup.lastRun.at).toLocaleString()} (${cleanup.lastRun.deleted} deleted${cleanup.lastRun.legacyMigrated ? `, ${cleanup.lastRun.legacyMigrated} legacy migrated` : ""})`
+                  : "not yet since server start"}
               </p>
             </div>
             <Button size="sm" variant="outline" className="gap-2" disabled={runCleanup.isPending} onClick={() => setConfirmOpen(true)}>
@@ -319,12 +332,12 @@ const AdminAnalytics = () => {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Deactivate inactive accounts?</AlertDialogTitle>
+            <AlertDialogTitle>Delete inactive accounts?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>
                   {candidates.length
-                    ? `${candidates.length} account(s) have ${cleanup?.inactivityMonths ?? 6}+ months on the qualifying-activity clock. The job will deactivate them and send reactivation email links.`
+                    ? `${candidates.length} account(s) have ${cleanup?.inactivityMonths ?? 6}+ months on the qualifying-activity clock. The job will delete them and email the account holder.`
                     : "No accounts are currently eligible on the qualifying-activity clock."}
                 </p>
                 {candidates.length > 0 && (

@@ -12,6 +12,12 @@ import { useEffect } from "react";
 import { socket } from "@/socket";
 import { ADMIN_API, adminAssetUrl, adminQueryKeys, invalidateAdminLifecycleData } from "@/lib/adminConnect";
 import { resolveAdminUserStatus } from "@/lib/adminUserStatus";
+import {
+  describeDeletionJobEligibility,
+  describeIdleBasis,
+  describeNextMilestone,
+  describeWarningProgress,
+} from "@/lib/adminLifecycleTimeline";
 
 axios.defaults.withCredentials = true;
 
@@ -27,9 +33,14 @@ type AdminLifecycleInsight = {
   lastQualifyingActivityAt?: string | null;
   qualifyingLastActiveAt?: string | null;
   eligibleForAutoDeactivation?: boolean;
+  eligibleForAutoDeletion?: boolean;
   inactivityTracked?: boolean;
   inactivityWarningStage?: number;
+  lastInactivityNotificationAt?: string | null;
+  lastStageDueAt?: string | null;
+  deletionDueAt?: string | null;
   nextMilestoneMonths?: number | null;
+  nextScheduledAt?: string | null;
   reactivationRequestStatus?: string | null;
   deactivation?: { reason?: string } | null;
 };
@@ -81,6 +92,7 @@ const UserProfileModal = ({ user, lifecycle: lifecycleFallback, open, onOpenChan
       };
     },
     enabled: open && Boolean(userId) && (role === "worker" || role === "employer"),
+    staleTime: 0,
   });
 
   const liveLifecycle = lifecyclePayload?.user;
@@ -104,10 +116,19 @@ const UserProfileModal = ({ user, lifecycle: lifecycleFallback, open, onOpenChan
       status: lifecycle?.status ?? user.status,
       lifecycle: lifecycle?.lifecycle,
       monthsSinceActivity: lifecycle?.monthsSinceActivity,
+      inactivityWarningStage: lifecycle?.inactivityWarningStage,
       reactivationRequestStatus: lifecycle?.reactivationRequestStatus,
     },
     deactivationMonths,
   );
+
+  const nextMilestoneLine = lifecycle
+    ? describeNextMilestone(lifecycle, deactivationMonths)
+    : null;
+  const deletionEligibleLine =
+    lifecycle && user.status !== "not_active"
+      ? describeDeletionJobEligibility(lifecycle, deactivationMonths)
+      : null;
 
   const { data: scores = {} } = useCredibility(user?.role ?? "worker", open ? [user?._id] : []);
   const credibility = user?._id ? scores[user._id] : undefined;
@@ -146,7 +167,7 @@ const UserProfileModal = ({ user, lifecycle: lifecycleFallback, open, onOpenChan
 
       if (response.data) {
         toast.success(response.data.message, {
-          description: "User deleted successfully",
+          description: "Account marked deleted; related jobs, applications, and messages were removed.",
         });
 
         onOpenChange(false);
@@ -223,17 +244,26 @@ const UserProfileModal = ({ user, lifecycle: lifecycleFallback, open, onOpenChan
               <p className="font-semibold text-foreground">Automated inactivity monitoring</p>
               <p>
                 Unified status: <span className="font-medium">{unified.label}</span>
-                {lifecycle.monthsSinceActivity != null
-                  ? ` · ${lifecycle.monthsSinceActivity} mo. since idle basis`
-                  : ""}
+                {lifecycle.lifecycle != null && (
+                  <>
+                    {" "}
+                    · Lifecycle: <span className="capitalize">{lifecycle.lifecycle}</span>
+                  </>
+                )}
               </p>
-              {lifecycle.inactivityWarningStage != null && lifecycle.inactivityWarningStage > 0 && (
-                <p className="text-amber-800">
-                  Warning emails sent through stage {lifecycle.inactivityWarningStage} mo.
-                  {lifecycle.nextMilestoneMonths != null
-                    ? ` · Next: ${lifecycle.nextMilestoneMonths} mo.`
-                    : ""}
+              {describeIdleBasis(lifecycle) && (
+                <p className="text-muted-foreground">{describeIdleBasis(lifecycle)}</p>
+              )}
+              {!describeIdleBasis(lifecycle) && lifecycle.inactivityTracked === false && (
+                <p className="text-muted-foreground">
+                  Not on inactivity automation yet (no qualifying sign-in).
                 </p>
+              )}
+              {describeWarningProgress(lifecycle) && (
+                <p className="text-amber-800">{describeWarningProgress(lifecycle)}</p>
+              )}
+              {nextMilestoneLine && (
+                <p className="text-amber-800/90">{nextMilestoneLine}</p>
               )}
               {lifecycle.reactivationRequestStatus && (
                 <p>
@@ -246,20 +276,22 @@ const UserProfileModal = ({ user, lifecycle: lifecycleFallback, open, onOpenChan
                   Deactivation reason: {lifecycle.deactivation.reason}
                 </p>
               )}
-              {lifecycle.lastActiveAt && (
+              {lifecycle.lastActiveAt && lifecycle.activityBasis !== "lastActiveAt" && (
                 <p className="text-muted-foreground">
-                  Idle basis: {new Date(lifecycle.lastActiveAt).toLocaleDateString()}
+                  Inactivity basis source:{" "}
+                  {new Date(lifecycle.lastActiveAt).toLocaleDateString()}
                   {lifecycle.activityBasis === "updatedAt" ? " (profile last updated)" : ""}
                   {lifecycle.activityBasis === "createdAtFallback" ? " (join date estimate)" : ""}
                 </p>
               )}
               {lifecycle.inactivityTracked &&
-                lifecycle.automatedMonthsSinceActivity != null && (
+                lifecycle.automatedMonthsSinceActivity != null &&
+                lifecycle.qualifyingLastActiveAt &&
+                lifecycle.automatedMonthsSinceActivity !== lifecycle.monthsSinceActivity && (
                 <p className="text-muted-foreground">
-                  Automation clock (qualifying activity): {lifecycle.automatedMonthsSinceActivity} mo.
-                  {lifecycle.qualifyingLastActiveAt
-                    ? ` · last ping ${new Date(lifecycle.qualifyingLastActiveAt).toLocaleDateString()}`
-                    : ""}
+                  Qualifying activity ping:{" "}
+                  {new Date(lifecycle.qualifyingLastActiveAt).toLocaleDateString()} (
+                  {lifecycle.automatedMonthsSinceActivity} mo.)
                 </p>
               )}
               {!lifecycle.inactivityTracked && user.status !== "not_active" && (
@@ -267,11 +299,8 @@ const UserProfileModal = ({ user, lifecycle: lifecycleFallback, open, onOpenChan
                   Not enrolled in automation until the user completes a qualifying sign-in.
                 </p>
               )}
-              {lifecycle.eligibleForAutoDeactivation && user.status !== "not_active" && (
-                <p className="text-amber-800 font-medium">
-                  Eligible for automated deactivation on the next daily inactivity job (6+ months on
-                  the policy idle basis above; a recent login alone does not reset this clock).
-                </p>
+              {deletionEligibleLine && (
+                <p className="text-red-800 font-medium">{deletionEligibleLine}</p>
               )}
             </div>
           )}

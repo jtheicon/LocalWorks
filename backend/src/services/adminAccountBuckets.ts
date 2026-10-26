@@ -7,7 +7,13 @@ export type AccountHealthBuckets = {
   /** Still has platform access but in 3/4/5/6‑month inactivity pipeline. */
   inactivityMonitoring: number;
   pending: number;
+  /** All admin/user `not_active` (moderation hold). */
   deactivated: number;
+  /** `not_active` with admin deactivation (reactivation flow). */
+  deactivatedAdmin: number;
+  /** Old 6-month policy: still `not_active` — daily job migrates to deleted. */
+  legacyInactivityDeactivated: number;
+  /** @deprecated alias of legacyInactivityDeactivated */
   autoDeactivated: number;
 };
 
@@ -17,6 +23,8 @@ export const bucketAccountHealth = (users: readonly Record<string, unknown>[]): 
     inactivityMonitoring: 0,
     pending: 0,
     deactivated: 0,
+    deactivatedAdmin: 0,
+    legacyInactivityDeactivated: 0,
     autoDeactivated: 0,
   };
 
@@ -29,7 +37,11 @@ export const bucketAccountHealth = (users: readonly Record<string, unknown>[]): 
     if (status === "not_active") {
       out.deactivated += 1;
       const deact = u.deactivation as { reason?: string } | null | undefined;
-      if (deact?.reason === "inactivity") out.autoDeactivated += 1;
+      if (deact?.reason === "inactivity") {
+        out.legacyInactivityDeactivated += 1;
+      } else {
+        out.deactivatedAdmin += 1;
+      }
       continue;
     }
     if (status === "active" || status === "verified") {
@@ -44,5 +56,6 @@ export const bucketAccountHealth = (users: readonly Record<string, unknown>[]): 
     }
   }
 
+  out.autoDeactivated = out.legacyInactivityDeactivated;
   return out;
 };

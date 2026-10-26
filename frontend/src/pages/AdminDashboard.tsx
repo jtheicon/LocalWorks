@@ -27,8 +27,6 @@ import {
 
 const AdminReports = lazy(() => import("@/components/admin/AdminReports"));
 
-axios.defaults.withCredentials = true
-
 const AdminDashboard = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -89,7 +87,16 @@ const AdminDashboard = () => {
   })
 
   if (isLoading) return <div style={styleCenter}>Loading...</div>
-  if (error) return <div>Error: {error.message}</div>
+  if (error) {
+    return (
+      <div style={styleCenter} className="flex flex-col gap-2 text-sm">
+        <p className="text-destructive">Could not load admin dashboard.</p>
+        <Button variant="outline" size="sm" onClick={() => navigate("/admin")}>
+          Back to admin sign in
+        </Button>
+      </div>
+    );
+  }
 
   const { JOBS, WORKERS, VERIFIED_WORKERS, REPORT_WORKERS } = data 
 
@@ -160,10 +167,10 @@ const AdminDashboard = () => {
     }
 
     return (
-      <main className="p-6 space-y-6">
+      <main className="app-dashboard-main">
         <div>
-          <h2 className="text-xl font-bold text-foreground">Platform Overview</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="app-page-title">Platform Overview</h2>
+          <p className="app-page-description">
             High-level statistics across sectors. Individual jobs and accounts are managed in the Posted Jobs and Profiles tabs.
           </p>
         </div>

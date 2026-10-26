@@ -1,8 +1,7 @@
 import { io } from "socket.io-client";
+import { API_ORIGIN } from "@/lib/apiOrigin";
 
-import { ADMIN_ORIGIN } from "@/lib/adminConnect";
-
-export const socket = io(ADMIN_ORIGIN, {
+export const socket = io(API_ORIGIN || undefined, {
   autoConnect: false,
   transports: ["websocket"],
 });

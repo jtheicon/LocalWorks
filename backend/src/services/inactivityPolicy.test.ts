@@ -9,6 +9,7 @@ import {
   setInactivityClock,
   resetInactivityClock,
   nextInactivityMilestone,
+  scheduledActionDate,
   DEACTIVATION_MONTHS,
 } from "./inactivityPolicy";
 
@@ -94,6 +95,15 @@ test("automation uses profile idle when login ping is newer", () => {
     DEACTIVATION_MONTHS,
   );
   resetInactivityClock();
+});
+
+test("warning due date is idle basis plus calendar months", () => {
+  const idle = new Date(2026, 6, 26, 12, 0, 0);
+  const due = scheduledActionDate(idle, 3);
+  assert.equal(due.getFullYear(), 2026);
+  assert.equal(due.getMonth(), 9);
+  assert.equal(due.getDate(), 26);
+  assert.equal(wholeMonthsSince(idle, due), 3);
 });
 
 test("deactivation milestone at six months", () => {

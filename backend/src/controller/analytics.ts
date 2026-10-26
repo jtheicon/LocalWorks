@@ -162,11 +162,20 @@ export const Analytics = async (_req: Request, res: Response) => {
 export const CleanupPreview = async (_req: Request, res: Response) => {
   try {
     const candidates = await findInactiveAccounts();
+    const legacyFilter = { status: "not_active", "deactivation.reason": "inactivity" as const };
+    const [legacyWorkers, legacyEmployers, deletedWorkers, deletedEmployers] = await Promise.all([
+      Worker.countDocuments(legacyFilter),
+      Employer.countDocuments(legacyFilter),
+      Worker.countDocuments({ status: "deleted", "deactivation.reason": "inactivity" }),
+      Employer.countDocuments({ status: "deleted", "deactivation.reason": "inactivity" }),
+    ]);
     return res.status(200).json({
       success: true,
       inactivityMonths: INACTIVITY_MONTHS,
       lastRun: getLastCleanupRun(),
       candidates,
+      legacyInactivityDeactivated: legacyWorkers + legacyEmployers,
+      deletedInactivityTombstones: deletedWorkers + deletedEmployers,
     });
   } catch (error) {
     mainError(error, res);
@@ -178,7 +187,7 @@ export const RunCleanup = async (_req: Request, res: Response) => {
     const result = await runInactivityMonitor();
     return res.status(200).json({
       success: true,
-      message: `Inactivity job finished (${result.deactivated} deactivated).`,
+      message: `Inactivity job finished (${result.deleted} deleted).`,
       result,
     });
   } catch (error) {

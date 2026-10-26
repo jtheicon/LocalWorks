@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { MessageSquare } from "lucide-react";
+import WorkerPageHeader from "@/components/worker/WorkerPageHeader";
 
 type Contact = {
   _id: string;
@@ -195,13 +196,10 @@ const Contacts = () => {
   return (
     <>
       <div>
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold">Contacts</h2>
-
-          <p className="text-muted-foreground">
-            Conversations with employers
-          </p>
-        </div>
+        <WorkerPageHeader
+          title="Contacts"
+          description="Messages with employers about jobs and assignments."
+        />
 
         <div className="grid gap-4">
           {contacts.length ? (

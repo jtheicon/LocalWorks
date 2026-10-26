@@ -1,8 +1,11 @@
 import type { QueryClient } from "@tanstack/react-query";
 import axios from "axios";
+import { API_ORIGIN } from "./apiOrigin";
+
+axios.defaults.withCredentials = true;
 
 /** Shared admin API root (REST + socket). */
-export const ADMIN_ORIGIN = import.meta.env.VITE_API_URL ?? "http://localhost:8920";
+export const ADMIN_ORIGIN = API_ORIGIN;
 export const ADMIN_API = `${ADMIN_ORIGIN}/api/admin`;
 
 export const adminAssetUrl = (path: string) =>
@@ -10,6 +13,7 @@ export const adminAssetUrl = (path: string) =>
 
 /** React Query keys used across admin tabs. */
 export const adminQueryKeys = {
+  adminSession: ["adminSession"] as const,
   dashboard: ["adminDashboard"] as const,
   analytics: ["adminAnalytics"] as const,
   cleanupPreview: ["cleanupPreview"] as const,

@@ -83,16 +83,20 @@ const AdminReactivationRequests = () => {
   const rows = data ?? [];
 
   return (
-    <main className="p-6 space-y-6">
+    <main className="app-dashboard-main">
       <div>
-        <h2 className="text-xl font-bold text-foreground">Reactivation requests</h2>
+        <h2 className="app-page-title">Reactivation requests</h2>
         <p className="text-sm text-muted-foreground">
-          Linked to User management and Account health — updates live when requests are submitted or reviewed.
+          Admin-deactivated accounts only. Long-term inactivity (6 months) deletes accounts; those users re-register instead.
         </p>
       </div>
 
       <Card className="border-none shadow-sm">
         <CardContent className="p-0">
+          <p className="border-b border-border px-4 py-3 text-xs text-muted-foreground">
+            For accounts deactivated by an administrator only. Six-month inactivity permanently deletes accounts;
+            those users must register again and will not appear here.
+          </p>
           {rows.length === 0 ? (
             <p className="p-8 text-center text-sm text-muted-foreground">No pending reactivation requests.</p>
           ) : (

@@ -11,6 +11,25 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:8920",
+        changeOrigin: true,
+      },
+      "/uploads": {
+        target: "http://127.0.0.1:8920",
+        changeOrigin: true,
+      },
+      "/public": {
+        target: "http://127.0.0.1:8920",
+        changeOrigin: true,
+      },
+      "/socket.io": {
+        target: "http://127.0.0.1:8920",
+        changeOrigin: true,
+        ws: true,
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

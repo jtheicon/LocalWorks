@@ -228,7 +228,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
   ];
 
   return (
-    <main className="p-6 space-y-6">
+    <main className="app-dashboard-main">
       {isError && (
         <p className="text-sm text-destructive">Could not load reports. Try Refresh on User management or re-open this tab.</p>
       )}
@@ -238,7 +238,7 @@ const AdminReports = ({ jobs }: AdminReportsProps) => {
       {/* Header */}
       <div className={`flex items-center justify-between ${!reportsReady ? "hidden" : ""}`}>
         <div>
-          <h2 className="text-xl font-bold text-foreground">Detailed Reports & Analytics</h2>
+          <h2 className="app-page-title">Detailed Reports & Analytics</h2>
           <p className="text-sm text-muted-foreground">Analyze application performance and trends</p>
         </div>
         <DropdownMenu>

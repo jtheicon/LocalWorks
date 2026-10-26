@@ -94,6 +94,37 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground text-base antialiased leading-normal;
+  }
+}
+
+@layer components {
+  /* Shared shell: use full viewport width up to 1600px with responsive gutters */
+  .app-shell-width {
+    @apply w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .app-dashboard-main {
+    @apply w-full flex-1 min-w-0 px-4 py-4 sm:px-6 sm:py-5 lg:px-8;
+  }
+
+  .app-dashboard-stack {
+    @apply space-y-4 md:space-y-5;
+  }
+
+  .app-page-title {
+    @apply text-xl font-semibold tracking-tight text-foreground sm:text-2xl;
+  }
+
+  .app-page-description {
+    @apply mt-1 text-sm leading-relaxed text-muted-foreground sm:text-base max-w-3xl;
+  }
+
+  .app-body-text {
+    @apply text-sm leading-relaxed text-foreground sm:text-base;
+  }
+
+  .app-muted-text {
+    @apply text-sm leading-relaxed text-muted-foreground;
   }
 }

@@ -14,7 +14,8 @@ test("account health buckets match user management lifecycle", () => {
   ]);
   assert.equal(buckets.inactivityMonitoring, 1);
   assert.equal(buckets.deactivated, 1);
-  assert.equal(buckets.autoDeactivated, 1);
+  assert.equal(buckets.legacyInactivityDeactivated, 1);
+  assert.equal(buckets.autoDeactivated, buckets.legacyInactivityDeactivated);
   assert.equal(buckets.pending, 1);
   resetInactivityClock();
 });

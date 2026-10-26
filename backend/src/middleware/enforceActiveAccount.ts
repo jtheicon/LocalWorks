@@ -20,17 +20,30 @@ export const enforceActiveAccount = async (req: Request, res: Response, next: Ne
 
   if (doc.status === "not_active") {
     res.clearCookie("token", clearAuthCookieOptions);
-    const inactivity = (doc as any).deactivation?.reason === "inactivity";
+    const reason = (doc as any).deactivation?.reason;
     return res.status(403).json({
       success: false,
       code: "ACCOUNT_DEACTIVATED",
-      message: inactivity
-        ? "Your account was deactivated due to inactivity. Use the reactivation link in your email or contact support."
-        : "Your account is not active. Contact an administrator.",
+      message:
+        reason === "admin"
+          ? "Your account was deactivated by an administrator."
+          : "Your account is not active. Contact an administrator.",
     });
   }
 
-  if (doc.status === "deleted" || doc.status === "pending") {
+  if (doc.status === "deleted") {
+    res.clearCookie("token", clearAuthCookieOptions);
+    const inactivity = (doc as any).deactivation?.reason === "inactivity";
+    return res.status(403).json({
+      success: false,
+      code: "ACCOUNT_DELETED",
+      message: inactivity
+        ? "Your account was deleted due to inactivity. Create a new account to sign in again."
+        : "Your account has been deleted.",
+    });
+  }
+
+  if (doc.status === "pending") {
     res.clearCookie("token", clearAuthCookieOptions);
     return res.status(403).json({ success: false, message: "Your account cannot access this resource." });
   }
