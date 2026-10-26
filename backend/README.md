@@ -155,25 +155,25 @@ The backend schedules a job ~1 minute after startup, then **daily** (`scheduleAc
 
 ### Inactivity email testing (`seed:inactivity-email-*`)
 
-Use these to **send real SMTP mail** to **`INACTIVITY_LIFECYCLE_INBOX`** (default `joav.zabala.up@phinmaed.com`). Tour workers log in as `lifecycle-*@localworks-inactivity.test`; the inbox is delivery-only and its platform account is never modified. Only the tour fixtures are backdated or deleted.
+These commands send real SMTP mail to **`INACTIVITY_LIFECYCLE_INBOX`** (default `joav.zabala.up@phinmaed.com`). The 3/4/5-month warning runs and the combined full tour use only `lifecycle-*@localworks-inactivity.test` fixtures. The deletion-only command is intentionally different: it finds the worker or employer account matching `INACTIVITY_LIFECYCLE_INBOX`, backdates it to six months idle, then runs the real deletion/purge flow on that account.
 
 This is separate from **`seed:inactivity`**, which seeds broader admin/UI demo accounts.
 
-Put in `.env` (or set in the shell): `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `SEED_DEMO_PASSWORD` (min 8 chars), `MONGO_URI` for the intended database, `EMAIL_USER`, `EMAIL_PASS` (Gmail App Password), `EMAIL_OWNER`, and `APP_URL`. Email settings and `APP_URL` are required for the 3/4/5/6-month email runs. `INACTIVITY_LIFECYCLE_INBOX` is optional; it selects the delivery address and never selects an account to backdate or delete.
+For fixture runs, configure `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `SEED_DEMO_PASSWORD` (min 8 chars), `MONGO_URI` for the intended database, `EMAIL_USER`, `EMAIL_PASS` (Gmail App Password), `EMAIL_OWNER`, and `APP_URL`. Email settings and `APP_URL` are required for email runs. The deletion-only command also requires an explicitly configured `INACTIVITY_LIFECYCLE_INBOX` and the second, destructive opt-in `SEED_DELETE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_DELETES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT`. It aborts without changing data if no matching account exists, more than one account matches across worker/employer collections, or its status is not `active`/`verified`. Do not set this opt-in unless you intend to permanently delete and scrub the configured account.
 
 | Goal | Command |
 |------|---------|
 | **3 month** warning email | `npm run seed:inactivity-email-3mo` |
 | **4 month** warning email | `npm run seed:inactivity-email-4mo` |
 | **5 month** final warning (deleted next month) | `npm run seed:inactivity-email-5mo` |
-| **6 month** deletion + account-deleted email | `npm run seed:inactivity-email-deletion` |
+| **6 month** deletion of the configured inbox account + account-deleted email | `npm run seed:inactivity-email-deletion` |
 | All four emails in one run | `npm run seed:inactivity-email-tour -- --apply --run-job` |
 | Preview policy (no DB writes) | `npm run seed:inactivity-email-tour` |
 | Remove tour workers | `npm run seed:inactivity-email-tour -- --reset` |
 
-Re-running a command is safe: fixtures are reset to the correct idle months/stages before each job (the 6‑month worker is recreated as `active` if you test deletion again).
+Warning fixtures are reset to their expected idle months/stages before each run. The deletion-only inbox test is not safe to rerun: after it marks the configured platform account deleted and purges related data, it refuses to modify the already-deleted account. A fresh login with the same email should return HTTP 403 / `ACCOUNT_DELETED`. The combined `--run-job` tour continues to delete only its `.test` 6-month fixture.
 
-The commands above mutate only the `lifecycle-*@localworks-inactivity.test` fixtures. The deletion command permanently deletes the 6-month fixture and related platform data; it does not delete the configured email recipient or any account matching that address.
+The deletion-only command permanently deletes the matching configured account and related platform data, including eligible S3 uploads when configured. Make a backup and confirm the account is safe to delete before running it in production.
 
 ## Cross-origin authentication
 
