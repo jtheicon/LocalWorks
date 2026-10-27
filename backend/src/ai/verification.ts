@@ -31,6 +31,11 @@ const getClient = () => {
 };
 
 class NotConfiguredError extends Error {}
+class DeadlineError extends Error {}
+
+// Total time one AI check may take, retries and fallbacks included. Kept under
+// Nginx's default 60 s proxy_read_timeout so the user gets our message, not a 504.
+const AI_DEADLINE_MS = 50_000;
 
 /* -------------------------------------------------------------------------- */
 /*                                  Schemas                                   */
@@ -160,12 +165,14 @@ export const parseGeminiJson = (text: string): unknown => {
   return JSON.parse((fenced?.[1] ?? trimmed).trim());
 };
 
-const generateJson = async (system: string, parts: Part[], schema: z.ZodType, maxOutputTokens: number) => {
+const generateJson = async (system: string, parts: Part[], schema: z.ZodType, maxOutputTokens: number, deadline: number) => {
   const models = geminiModelChain();
   let lastError: unknown;
 
   for (const model of models) {
     for (let apiAttempt = 1; apiAttempt <= 4; apiAttempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new DeadlineError();
       try {
         const response = await getClient().models.generateContent({
           model,
@@ -176,6 +183,7 @@ const generateJson = async (system: string, parts: Part[], schema: z.ZodType, ma
             maxOutputTokens,
             responseMimeType: "application/json",
             responseJsonSchema: toGeminiSchema(schema),
+            abortSignal: AbortSignal.timeout(remaining),
           },
         });
 
@@ -192,11 +200,12 @@ const generateJson = async (system: string, parts: Part[], schema: z.ZodType, ma
         }
         return { text, finishReason, model };
       } catch (error) {
+        if (Date.now() >= deadline) throw new DeadlineError();
         lastError = error;
         const status = geminiApiStatus(error);
         if (status === 404) break; // wrong model id — try next in chain
         if (retryableGeminiStatus(status) && apiAttempt < 4) {
-          await sleep(1500 * apiAttempt);
+          await sleep(Math.min(1500 * apiAttempt, Math.max(0, deadline - Date.now())));
           continue;
         }
         if (retryableGeminiStatus(status)) break; // exhausted retries on this model
@@ -214,8 +223,9 @@ export const ask = async <T extends z.ZodType>(
   options?: { maxOutputTokens?: number },
 ): Promise<z.infer<T>> => {
   let maxOutputTokens = options?.maxOutputTokens ?? 1024;
+  const deadline = Date.now() + AI_DEADLINE_MS;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { text, finishReason, model: modelUsed } = await generateJson(system, parts, schema, maxOutputTokens);
+    const { text, finishReason, model: modelUsed } = await generateJson(system, parts, schema, maxOutputTokens, deadline);
     void modelUsed; // parsed path only; model recorded on verification wrappers via MODEL / fallback log
     if (finishReason === "MAX_TOKENS" && attempt === 0) {
       maxOutputTokens = Math.min(maxOutputTokens * 2, 8192);
@@ -264,6 +274,7 @@ const fromVerdict = (
 };
 
 export const describeError = (error: unknown) => {
+  if (error instanceof DeadlineError) return "AI verification took too long - try again in a few minutes";
   if (error instanceof NotConfiguredError) return "AI verification is not configured (set GEMINI_API_KEY in backend/.env)";
   if (error instanceof ApiError) {
     if (error.status === 400 || error.status === 401 || error.status === 403) return `AI verification rejected the request (API error ${error.status}) - check GEMINI_API_KEY / GEMINI_MODEL`;
