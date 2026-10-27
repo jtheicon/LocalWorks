@@ -1,6 +1,7 @@
 import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
+import { stripEmoji } from "@/lib/inputSanitize";
 import { Calendar, ClipboardList } from "lucide-react";
 import { Tabs, TabsList, TabsContent, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, Upload } from "lucide-react";
@@ -798,7 +799,7 @@ const WorkerAssignment = () => {
                   <Textarea
                     rows={4}
                     value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
+                    onChange={(e) => setRemarks(stripEmoji(e.target.value))}
                     placeholder="Enter remarks..."
                   />
                 </div>
@@ -950,7 +951,7 @@ const WorkerAssignment = () => {
                 className="w-full rounded-lg border p-3"
                 rows={4}
                 value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
+                onChange={(e) => setRemarks(stripEmoji(e.target.value))}
                 placeholder="Enter remarks..."
               />
             </div>

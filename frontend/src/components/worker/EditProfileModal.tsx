@@ -370,6 +370,7 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
               <Input
                 id="phoneNumber"
                 name="phoneNumber"
+                type="tel"
                 value={formData.phoneNumber}
                 onChange={handleChange}
               />

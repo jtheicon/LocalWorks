@@ -1,10 +1,17 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { stripEmoji } from "@/lib/inputSanitize";
 
 export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
 
-const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(({ className, ...props }, ref) => {
+const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(({ className, onChange, ...props }, ref) => {
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const cleaned = stripEmoji(e.target.value);
+    if (cleaned !== e.target.value) e.target.value = cleaned;
+    onChange?.(e);
+  };
+
   return (
     <textarea
       className={cn(
@@ -12,6 +19,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(({ classNa
         className,
       )}
       ref={ref}
+      onChange={handleChange}
       {...props}
     />
   );

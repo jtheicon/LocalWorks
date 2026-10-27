@@ -21,6 +21,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import axios from "axios";
+import { stripEmoji } from "@/lib/inputSanitize";
 
 interface Application {
   _id: string;
@@ -250,8 +251,8 @@ const EmployerConversationModal = ({
               }
             })}
             <div className="relative">
-              <input type="text" className="w-full mt-6 p-2 border-2 border-solid" placeholder="Enter a title." value={title} onChange={(Event) => setTitle(Event.target.value)} />
-              <textarea name="response" id="response" placeholder="Enter a repsonse." className="w-full mt-2 mb-12 p-2 border-2 border-solid" value={description} onChange={(Event) => setDescription(Event.target.value)} />
+              <input type="text" className="w-full mt-6 p-2 border-2 border-solid" placeholder="Enter a title." value={title} onChange={(Event) => setTitle(stripEmoji(Event.target.value))} />
+              <textarea name="response" id="response" placeholder="Enter a repsonse." className="w-full mt-2 mb-12 p-2 border-2 border-solid" value={description} onChange={(Event) => setDescription(stripEmoji(Event.target.value))} />
               <button className="absolute right-0 bottom-0 bg-[#505050] text-white py-2 px-3" onClick={submitResponse}>Submit response</button>
             </div>
           </div>

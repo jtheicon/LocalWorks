@@ -2,6 +2,7 @@ import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
+import { stripEmoji } from "@/lib/inputSanitize";
 
 import {
   Card,
@@ -342,7 +343,7 @@ const Contacts = () => {
       <input
         value={message}
         onChange={(e) =>
-          setMessage(e.target.value)
+          setMessage(stripEmoji(e.target.value))
         }
         placeholder="Reply..."
         className="flex-1 border rounded-md px-3"

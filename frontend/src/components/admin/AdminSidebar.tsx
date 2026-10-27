@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutDashboard, Briefcase, FileText, BarChart3, Bell, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, Briefcase, BarChart3, Bell, Users, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -30,7 +30,6 @@ const navItems = [
   { id: "reports", label: "Reports", icon: BarChart3 },
   { id: "notifications", label: "Notification", icon: Bell },
   { id: "profiles", label: "User management", icon: Users },
-  { id: "reactivation", label: "Reactivation", icon: FileText },
 ];
 
 const AdminSidebar = ({ activeTab, onTabChange }: AdminSidebarProps) => {

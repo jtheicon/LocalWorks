@@ -244,6 +244,7 @@ const EditProfileModal = ({ open, onOpenChange }: EditProfileModalProps) => {
               <Input
                 id="phone"
                 name="phone"
+                type="tel"
                 value={formData.phone}
                 onChange={handleChange}
               />

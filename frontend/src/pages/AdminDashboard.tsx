@@ -9,7 +9,6 @@ import AdminAnalytics from "@/components/admin/AdminAnalytics";
 import AdminReportsSkeleton from "@/components/admin/AdminReportsSkeleton";
 import AllPostedJobs from "@/components/admin/AllPostedJobs";
 import AdminProfiles from "@/components/admin/AdminProfiles";
-import AdminReactivationRequests from "@/components/admin/AdminReactivationRequests";
 import AdminNotifications from "@/components/admin/AdminNotifications";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
@@ -54,7 +53,7 @@ const AdminDashboard = () => {
     if (tab === "dashboard") {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.cleanupPreview });
     }
-    if (tab === "profiles" || tab === "reactivation") {
+    if (tab === "profiles") {
       invalidateAdminLifecycleData(queryClient);
     }
     if (tab === "notifications") {
@@ -148,10 +147,6 @@ const AdminDashboard = () => {
 
     if (activeTab === "profiles") {
       return <AdminProfiles />;
-    }
-
-    if (activeTab === "reactivation") {
-      return <AdminReactivationRequests />;
     }
 
     if (activeTab === "notifications") {
