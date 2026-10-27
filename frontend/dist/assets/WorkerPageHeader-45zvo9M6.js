@@ -1,0 +1,1 @@
+import{j as e}from"./index-p-WWXw-T.js";const r=({title:a,description:s})=>e.jsxs("div",{className:"mb-4 md:mb-5",children:[e.jsx("h1",{className:"app-page-title",children:a}),s?e.jsx("p",{className:"app-page-description",children:s}):null]});export{r as W};

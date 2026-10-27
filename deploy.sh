@@ -82,6 +82,7 @@ sudo nginx -t
 curl --fail --silent --show-error \
   -o /dev/null "http://127.0.0.1/api/application-health"
 
+sudo systemctl daemon-reload
 sudo systemctl reload nginx
 
 echo "==> Public checks (via nginx)"

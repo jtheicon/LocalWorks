@@ -1,0 +1,6 @@
+import{c as j,a6 as i}from"./index-p-WWXw-T.js";/**
+ * @license lucide-react v0.462.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const x=j("Filter",[["polygon",{points:"22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3",key:"1yg77f"}]]),b=t=>{let e;const s=new Set,o=(c,r)=>{const a=typeof c=="function"?c(e):c;if(!Object.is(a,e)){const d=e;e=r??(typeof a!="object"||a===null)?a:Object.assign({},e,a),s.forEach(f=>f(e,d))}},n=()=>e,u={setState:o,getState:n,getInitialState:()=>S,subscribe:c=>(s.add(c),()=>s.delete(c))},S=e=t(o,n,u);return u},g=t=>t?b(t):b,m=t=>t;function p(t,e=m){const s=i.useSyncExternalStore(t.subscribe,i.useCallback(()=>e(t.getState()),[t,e]),i.useCallback(()=>e(t.getInitialState()),[t,e]));return i.useDebugValue(s),s}const l=t=>{const e=g(t),s=o=>p(e,o);return Object.assign(s,e),s},y=t=>t?l(t):l,D=y((t,e)=>({jobs:[],addJob:s=>{const o={...s,_id:crypto.randomUUID(),posted:{email:""},status:"PENDING"};t({jobs:[o,...e().jobs]})},removeJob:s=>{t({jobs:e().jobs.filter(o=>o._id!==s)})},updateJobStatus:(s,o)=>{t({jobs:e().jobs.map(n=>n._id===s?{...n,status:o}:n)})}}));export{x as F,y as c,D as u};
