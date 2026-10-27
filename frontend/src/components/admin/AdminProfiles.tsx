@@ -131,8 +131,8 @@ const AdminProfiles = () => {
 
   return (
     <>
-      <main className="app-dashboard-main">
-        <div className="flex flex-wrap items-end justify-between gap-2">
+      <main className="app-dashboard-main app-dashboard-stack">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h2 className="app-page-title">User management</h2>
             <p className="app-page-description">

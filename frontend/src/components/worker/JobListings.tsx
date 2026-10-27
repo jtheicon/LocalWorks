@@ -354,8 +354,7 @@ const JobListings = () => {
   const handleApplyFromModal = () => {
     if (selectedJob) {
       setDetailsModalOpen(false);
-      setJobToApply(selectedJob);
-      setConfirmApplyOpen(true);
+      handleApplyClick(selectedJob);
     }
   };
 

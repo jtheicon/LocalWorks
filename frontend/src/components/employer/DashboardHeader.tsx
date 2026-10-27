@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import EditProfileModal from "./EditProfileModal";
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import axios from "axios";
 
@@ -36,7 +36,8 @@ interface DashboardHeaderProps {
 
 const DashboardHeader = () => {
   const navigate = useNavigate();
-    
+  const queryClient = useQueryClient();
+
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -54,7 +55,9 @@ const DashboardHeader = () => {
         { withCredentials: true },
       );
       if (response.data) {
-        navigate("/");
+        // Replace the history entry and drop the cached session so Back can't reopen the dashboard.
+        navigate("/", { replace: true });
+        queryClient.clear();
       }
     } catch (error: unknown) {
       if (axios.isAxiosError(error) && error.response) {

@@ -80,7 +80,9 @@ const WorkerDashboard = () => {
     setSigningOut(true);
     try {
       await axios.post(`${API_ORIGIN}/api/pro/logout`, {}, { withCredentials: true });
-      navigate("/");
+      // Replace the history entry and drop the cached session so Back can't reopen the dashboard.
+      navigate("/", { replace: true });
+      queryClient.clear();
     } finally {
       setSigningOut(false);
       setSignOutOpen(false);

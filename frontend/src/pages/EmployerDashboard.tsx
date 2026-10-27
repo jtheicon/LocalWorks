@@ -1,5 +1,5 @@
 import { API_ORIGIN } from "@/lib/apiOrigin";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Contacts from "@/components/employer/Contacts";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
@@ -169,9 +169,17 @@ const EmployerDashboard = () => {
 
   const { isLoading, error } = useQuery({
     queryKey: ['isEmployerLogged'],
-    queryFn: isEmployerLogged
+    queryFn: isEmployerLogged,
+    retry: false,
+    refetchOnMount: "always",
   })
-  
+
+  useEffect(() => {
+    if (!error) return;
+    navigate("/", { replace: true })
+    toast.info("Please Login as Employer to use the Employer Dashboard.")
+  }, [error, navigate]);
+
   const styleCenter = {
     display: "flex",
     justifyContent: "center",
@@ -180,10 +188,7 @@ const EmployerDashboard = () => {
   }
 
   if (isLoading) return <div style={styleCenter}>Loading...</div>
-  if (error) {
-    navigate("/", { replace: true })
-    toast.info("Please Login as Employer to use the Employer Dashboard.")
-  }
+  if (error) return null
 
   const sectionTitles: Record<string, { title: string; description: string }> = {
     applications: { title: "Applications", description: "Review and manage applications from workers." },
@@ -237,7 +242,7 @@ const EmployerDashboard = () => {
     const section = sectionTitles[activeTab];
 
     return (
-      <main className="app-dashboard-main overflow-auto">
+      <main className="app-dashboard-main app-dashboard-stack overflow-auto">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="app-page-title">{section?.title}</h2>

@@ -162,7 +162,7 @@ const AdminDashboard = () => {
     }
 
     return (
-      <main className="app-dashboard-main">
+      <main className="app-dashboard-main app-dashboard-stack">
         <div>
           <h2 className="app-page-title">Platform Overview</h2>
           <p className="app-page-description">

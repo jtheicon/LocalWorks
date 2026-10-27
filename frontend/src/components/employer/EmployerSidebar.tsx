@@ -2,7 +2,19 @@ import { API_ORIGIN } from "@/lib/apiOrigin";
 import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, Users, Briefcase, Search, MessageSquare, Flag, Bell, ClipboardList, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import logo from "@/assets/logo.avif";
 import axios from "axios";
 
@@ -27,12 +39,18 @@ const navItems = [
 
 const EmployerSidebar = ({ activeTab, onTabChange, unreadCount = 0 }: EmployerSidebarProps) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const handleLogout = async () => {
+    setSigningOut(true);
     await axios.post(`${API_ORIGIN}/api/pro/logout`, {}, { withCredentials: true })
       .then(function (response) {
         if (response.data) {
-          navigate("/")
+          // Replace the history entry and drop the cached session so Back can't reopen the dashboard.
+          navigate("/", { replace: true })
+          queryClient.clear()
           toast.success(response.data.message, {
             description: "Sign In Again to use this Application"
           })
@@ -42,6 +60,10 @@ const EmployerSidebar = ({ activeTab, onTabChange, unreadCount = 0 }: EmployerSi
         if (error.response) {
           toast.info(error.response.data.message)
         }
+      })
+      .finally(function () {
+        setSigningOut(false);
+        setSignOutOpen(false);
       })
   };
 
@@ -87,13 +109,36 @@ const EmployerSidebar = ({ activeTab, onTabChange, unreadCount = 0 }: EmployerSi
       <div className="p-3 border-t border-sidebar-border">
         <Button
           variant="ghost"
-          onClick={handleLogout}
+          onClick={() => setSignOutOpen(true)}
           className="w-full justify-start gap-3 h-10 text-sm text-destructive hover:text-destructive hover:bg-destructive/10"
         >
           <LogOut className="w-4 h-4" />
           Sign out
         </Button>
       </div>
+
+      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will leave your employer dashboard and need to sign in again to continue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={signingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={signingOut}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleLogout();
+              }}
+            >
+              {signingOut ? "Signing out…" : "Sign out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   );
 };

@@ -92,10 +92,10 @@ const AllPostedJobs = ({ jobs, onUpdateStatus, onDelete }: AllPostedJobsProps) =
 
   return (
     <>
-      <main className="app-dashboard-main">
+      <main className="app-dashboard-main app-dashboard-stack">
         <div>
           <h2 className="app-page-title">Employer Companies</h2>
-          <p className="text-sm text-muted-foreground">View employer companies and manage their job posts.</p>
+          <p className="app-page-description">View employer companies and manage their job posts.</p>
         </div>
 
         {/* Search & Filters */}

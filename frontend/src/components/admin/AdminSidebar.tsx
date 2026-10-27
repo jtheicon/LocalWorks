@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, Briefcase, BarChart3, Bell, Users, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ const navItems = [
 
 const AdminSidebar = ({ activeTab, onTabChange }: AdminSidebarProps) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -42,7 +44,9 @@ const AdminSidebar = ({ activeTab, onTabChange }: AdminSidebarProps) => {
     await axios.post(`${ADMIN_ORIGIN}/api/pro/logout`, {}, { withCredentials: true })
       .then(function (response) {
         if (response.data) {
-          navigate("/admin")
+          // Replace the history entry and drop the cached session so Back can't reopen the dashboard.
+          navigate("/admin", { replace: true })
+          queryClient.clear()
           toast.success(response.data.message, {
             description: "Sign In Again to use this Application"
           })

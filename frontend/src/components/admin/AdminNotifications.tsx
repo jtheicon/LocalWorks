@@ -120,11 +120,11 @@ const AdminNotifications = () => {
   };
 
   return (
-    <main className="app-dashboard-main">
+    <main className="app-dashboard-main app-dashboard-stack">
       {/* Header */}
       <div>
         <h2 className="app-page-title">Welcome Back!, Admin</h2>
-        <p className="text-sm text-muted-foreground">
+        <p className="app-page-description">
           Here's what happening with your reports today
         </p>
       </div>
