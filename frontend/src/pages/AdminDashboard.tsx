@@ -9,7 +9,7 @@ import AdminAnalytics from "@/components/admin/AdminAnalytics";
 import AdminReportsSkeleton from "@/components/admin/AdminReportsSkeleton";
 import AllPostedJobs from "@/components/admin/AllPostedJobs";
 import AdminProfiles from "@/components/admin/AdminProfiles";
-import AdminReactivationRequests from "@/components/admin/AdminReactivationRequests";
+//import AdminReactivationRequests from "@/components/admin/AdminReactivationRequests";
 import AdminNotifications from "@/components/admin/AdminNotifications";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
