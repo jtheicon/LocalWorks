@@ -1,38 +1,38 @@
 import { Request, Response } from "express";
 import fs from "node:fs/promises";
-import Industry from "../model/Industry";
 import { uploadEmployerPermit, uploadFiles } from "../file/upload";
-import { extractPermit, extractResume, ExtractionResult } from "../ai/verification";
-import { issueSignupDocumentToken, SignupDocumentKind } from "../services/signupDocument";
+import { createSignupScan, pollSignupScan } from "../services/signupDocumentScan";
+import {
+  SIGNUP_DOCUMENT_MAX_MB,
+  signupDocumentMaxBytes,
+  signupDocumentMaxSizeLabel,
+} from "../config/uploadLimits";
 
 const removeFile = (filePath: string) => fs.unlink(filePath).catch(() => {});
 
 const multerMessage = (err: any) =>
-  err?.code === "LIMIT_FILE_SIZE" ? "The file is too large. The maximum is 5 MB." : "Invalid file type.";
+  err?.code === "LIMIT_FILE_SIZE"
+    ? `The file is too large. The maximum is ${signupDocumentMaxSizeLabel()}.`
+    : "Invalid file type.";
 
-// Shared response: approved -> fields + token; otherwise the file is discarded and the
-// applicant is told why, so they can upload a clearer or correct document.
-const respond = <F extends { document_type: string }>(res: Response, file: Express.Multer.File, kind: SignupDocumentKind, name: (fields: F) => string, { verification, fields }: ExtractionResult<F>) => {
-  if (verification.decision !== "approve" || !fields) {
-    removeFile(file.path);
-    return res.status(422).json({
-      success: false,
-      message: verification.method === "unavailable"
-        ? "We couldn't check your document right now. Please try again in a few minutes."
-        : "We couldn't verify this document.",
-      reasons: verification.reasons,
-    });
-  }
-
-  return res.status(200).json({
+export const SignupUploadLimits = (_req: Request, res: Response) =>
+  res.status(200).json({
     success: true,
-    documentToken: issueSignupDocumentToken(kind, file.filename, name(fields), verification),
-    documentType: fields.document_type,
-    fields,
+    maxMb: SIGNUP_DOCUMENT_MAX_MB,
+    maxBytes: signupDocumentMaxBytes(),
+    label: signupDocumentMaxSizeLabel(),
+  });
+
+const acceptUpload = (res: Response, file: Express.Multer.File, kind: "resume" | "permit") => {
+  const scanId = createSignupScan(kind, file);
+  return res.status(202).json({
+    success: true,
+    status: "processing",
+    scanId,
   });
 };
 
-// POST /api/auth/signup/resume  (multipart, field "resume")
+// POST /api/auth/signup/resume  (multipart, field "resume") — returns scanId; poll GET /signup/scan/:scanId
 export const ScanResume = (req: Request, res: Response) => {
   uploadFiles.single("resume")(req, res, async (err) => {
     if (err) return res.status(400).json({ success: false, message: multerMessage(err) });
@@ -40,7 +40,7 @@ export const ScanResume = (req: Request, res: Response) => {
     if (!file) return res.status(400).json({ success: false, message: "Please upload your resume." });
 
     try {
-      respond(res, file, "resume", (f) => f.full_name, await extractResume(file.path));
+      acceptUpload(res, file, "resume");
     } catch (error) {
       removeFile(file.path);
       console.error("[signup] resume scan:", error);
@@ -57,12 +57,27 @@ export const ScanPermit = (req: Request, res: Response) => {
     if (!file) return res.status(400).json({ success: false, message: "Please upload your business permit." });
 
     try {
-      const industries = (await Industry.find({}).select("title").lean()).map((i) => i.title as string);
-      respond(res, file, "permit", (f) => f.business_name, await extractPermit(file.path, industries));
+      acceptUpload(res, file, "permit");
     } catch (error) {
       removeFile(file.path);
       console.error("[signup] permit scan:", error);
       res.status(500).json({ success: false, message: "Something went wrong while reading your permit." });
     }
   });
+};
+
+// GET /api/auth/signup/scan/:scanId
+export const PollSignupScan = (req: Request, res: Response) => {
+  const scanId = typeof req.params.scanId === "string" ? req.params.scanId.trim() : "";
+  if (!scanId) {
+    return res.status(400).json({ success: false, message: "Missing scan id." });
+  }
+  const payload = pollSignupScan(scanId);
+  if (!payload) {
+    return res.status(404).json({ success: false, message: "This document review expired. Please upload again." });
+  }
+  if (payload.status === "rejected" || payload.status === "error") {
+    return res.status(422).json(payload);
+  }
+  return res.status(200).json(payload);
 };

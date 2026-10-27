@@ -9,6 +9,8 @@ import {
   scanStageLabel,
   uploadProgressPercent,
 } from "@/lib/documentScanProgress";
+import { pollSignupDocumentScan } from "@/lib/signupDocumentPoll";
+import { getSignupUploadLimits } from "@/lib/signupUploadLimits";
 
 axios.defaults.withCredentials = true;
 
@@ -56,22 +58,29 @@ const ScanProgressBar = ({
     />
     {phase === "verifying" && progress < 100 && (
       <p className="text-[11px] text-muted-foreground">
-        AI review usually takes 15–45 seconds. Progress slows near the end while we wait for the
-        model to finish.
+        AI review usually takes 15–60 seconds (longer for large PDFs). Progress slows near the end
+        while the model finishes; you can keep this page open.
       </p>
     )}
   </div>
 );
-
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 // Step 1 of sign-up: the document is uploaded first, checked by AI, and its details are
 // used to pre-fill the rest of the form.
 const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerified, onCleared }: DocumentScanUploadProps<F>) => {
   const [file, setFile] = useState<File | null>(null);
   const [scan, setScan] = useState<ScanState>({ status: "idle" });
+  const [maxBytes, setMaxBytes] = useState(5 * 1024 * 1024);
+  const [maxSizeLabel, setMaxSizeLabel] = useState("5 MB");
   const activeRequest = useRef<AbortController | null>(null);
   const aiProgressStart = useRef<number | null>(null);
+
+  useEffect(() => {
+    getSignupUploadLimits().then(({ maxBytes: bytes, label }) => {
+      setMaxBytes(bytes);
+      setMaxSizeLabel(label);
+    });
+  }, []);
 
   useEffect(() => {
     if (scan.status !== "scanning" || scan.phase !== "verifying") {
@@ -116,10 +125,10 @@ const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerifi
       });
       return;
     }
-    if (selected.size > MAX_FILE_BYTES) {
+    if (selected.size > maxBytes) {
       setScan({
         status: "rejected",
-        message: "The file is too large. Maximum upload size is 5 MB.",
+        message: `The file is too large. Maximum upload size is ${maxSizeLabel}.`,
         reasons: [],
       });
       return;
@@ -136,6 +145,7 @@ const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerifi
       const response = await axios.post(`${API_ORIGIN}/api/auth/signup/${field}`, formData, {
         withCredentials: true,
         signal: controller.signal,
+        validateStatus: (s) => s === 202 || s === 200,
         onUploadProgress: (event) => {
           if (!event.total) return;
           const progress = uploadProgressPercent(event.loaded, event.total);
@@ -148,8 +158,25 @@ const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerifi
         },
       });
       if (controller.signal.aborted) return;
+
+      setScan({ status: "scanning", phase: "verifying", progress: uploadProgressPercent(1, 1) });
+
+      let documentToken: string;
+      let documentType: string;
+      let fields: F;
+
+      const scanId = response.data?.scanId as string | undefined;
+      if (response.status === 202 && scanId) {
+        const result = await pollSignupDocumentScan<F>(scanId, controller.signal);
+        documentToken = result.documentToken;
+        documentType = result.documentType;
+        fields = result.fields;
+      } else {
+        ({ documentToken, documentType, fields } = response.data);
+      }
+
+      if (controller.signal.aborted) return;
       setScan({ status: "scanning", phase: "verifying", progress: 100 });
-      const { documentToken, documentType, fields } = response.data;
       setScan({ status: "verified", documentType });
       onVerified({ documentToken, documentType, fields });
     } catch (error: unknown) {
@@ -157,12 +184,20 @@ const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerifi
       const response = axios.isAxiosError<{ message?: string; reasons?: string[] }>(error)
         ? error.response?.data
         : undefined;
+      const rejection = error as Error & { reasons?: string[]; isSignupRejection?: boolean };
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      let message =
+        response?.message ||
+        rejection.message ||
+        "We couldn't check your document. Please try again.";
+      if (status === 504) {
+        message =
+          "The server timed out before the review finished. Try DOCX or a smaller PDF, then upload again.";
+      }
       setScan({
         status: "rejected",
-        message:
-          response?.message ||
-          (error instanceof Error ? error.message : "We couldn't check your document. Please try again."),
-        reasons: response?.reasons || [],
+        message,
+        reasons: response?.reasons || rejection.reasons || [],
       });
     } finally {
       if (activeRequest.current === controller) activeRequest.current = null;
@@ -177,12 +212,19 @@ const DocumentScanUpload = <F,>({ label, accept, helpText, type, field, onVerifi
       </div>
       <p className="text-xs text-muted-foreground">
         {field === "resume"
-          ? "Upload a PDF or DOCX resume up to 5 MB. DOCX files usually upload and process faster."
-          : "Upload a clear PDF or image of your business permit (max 5 MB)."}{" "}
+          ? `Upload a PDF or DOCX resume up to ${maxSizeLabel}. DOCX files usually upload and process faster.`
+          : `Upload a clear PDF or image of your business permit (max ${maxSizeLabel}).`}{" "}
         You will see upload and AI review progress below.
       </p>
 
-      <FileUpload label={label} accept={accept} file={file} onChange={handleChange} helpText={helpText} type={type} />
+      <FileUpload
+        label={label}
+        accept={accept}
+        file={file}
+        onChange={handleChange}
+        helpText={`${helpText} Maximum file size: ${maxSizeLabel}.`}
+        type={type}
+      />
 
       {scan.status === "scanning" && (
         <ScanProgressBar progress={scan.progress} field={field} phase={scan.phase} />

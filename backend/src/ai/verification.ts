@@ -33,9 +33,10 @@ const getClient = () => {
 class NotConfiguredError extends Error {}
 class DeadlineError extends Error {}
 
-// Total time one AI check may take, retries and fallbacks included. Kept under
-// Nginx's default 60 s proxy_read_timeout so the user gets our message, not a 504.
+// Inline / admin checks: stay under typical 60s proxy limits when still synchronous.
 const AI_DEADLINE_MS = 50_000;
+// Sign-up scans run in a background job; client polls (see signupDocumentScan.ts).
+const SIGNUP_AI_DEADLINE_MS = Number(process.env.SIGNUP_AI_DEADLINE_MS) || 120_000;
 
 /* -------------------------------------------------------------------------- */
 /*                                  Schemas                                   */
@@ -165,12 +166,25 @@ export const parseGeminiJson = (text: string): unknown => {
   return JSON.parse((fenced?.[1] ?? trimmed).trim());
 };
 
-const generateJson = async (system: string, parts: Part[], schema: z.ZodType, maxOutputTokens: number, deadline: number) => {
-  const models = geminiModelChain();
+type GenerateJsonOptions = {
+  models?: string[];
+  maxApiAttempts?: number;
+};
+
+const generateJson = async (
+  system: string,
+  parts: Part[],
+  schema: z.ZodType,
+  maxOutputTokens: number,
+  deadline: number,
+  genOpts?: GenerateJsonOptions,
+) => {
+  const models = genOpts?.models ?? geminiModelChain();
+  const maxApiAttempts = genOpts?.maxApiAttempts ?? 4;
   let lastError: unknown;
 
   for (const model of models) {
-    for (let apiAttempt = 1; apiAttempt <= 4; apiAttempt++) {
+    for (let apiAttempt = 1; apiAttempt <= maxApiAttempts; apiAttempt++) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new DeadlineError();
       try {
@@ -204,7 +218,7 @@ const generateJson = async (system: string, parts: Part[], schema: z.ZodType, ma
         lastError = error;
         const status = geminiApiStatus(error);
         if (status === 404) break; // wrong model id — try next in chain
-        if (retryableGeminiStatus(status) && apiAttempt < 4) {
+        if (retryableGeminiStatus(status) && apiAttempt < maxApiAttempts) {
           await sleep(Math.min(1500 * apiAttempt, Math.max(0, deadline - Date.now())));
           continue;
         }
@@ -216,16 +230,33 @@ const generateJson = async (system: string, parts: Part[], schema: z.ZodType, ma
   throw lastError ?? new Error("Gemini request failed");
 };
 
+export type AskOptions = {
+  maxOutputTokens?: number;
+  /** Sign-up background scan: longer deadline, fewer model hops. */
+  signup?: boolean;
+};
+
 export const ask = async <T extends z.ZodType>(
   system: string,
   parts: Part[],
   schema: T,
-  options?: { maxOutputTokens?: number },
+  options?: AskOptions,
 ): Promise<z.infer<T>> => {
   let maxOutputTokens = options?.maxOutputTokens ?? 1024;
-  const deadline = Date.now() + AI_DEADLINE_MS;
+  const deadlineMs = options?.signup ? SIGNUP_AI_DEADLINE_MS : AI_DEADLINE_MS;
+  const deadline = Date.now() + deadlineMs;
+  const genOpts: GenerateJsonOptions | undefined = options?.signup
+    ? { models: geminiModelChain().slice(0, 2), maxApiAttempts: 2 }
+    : undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { text, finishReason, model: modelUsed } = await generateJson(system, parts, schema, maxOutputTokens, deadline);
+    const { text, finishReason, model: modelUsed } = await generateJson(
+      system,
+      parts,
+      schema,
+      maxOutputTokens,
+      deadline,
+      genOpts,
+    );
     void modelUsed; // parsed path only; model recorded on verification wrappers via MODEL / fallback log
     if (finishReason === "MAX_TOKENS" && attempt === 0) {
       maxOutputTokens = Math.min(maxOutputTokens * 2, 8192);
@@ -410,15 +441,25 @@ export interface ExtractionResult<F> {
   fields: F | null;
 }
 
-export const extractResume = async (filePath: string): Promise<ExtractionResult<ResumeFields>> => {
+export const extractResume = async (
+  filePath: string,
+  options?: { signup?: boolean },
+): Promise<ExtractionResult<ResumeFields>> => {
   try {
     const file = await fileToPart(filePath);
     if (!file) return { verification: unavailable("Resume file type cannot be read (upload PDF or DOCX)"), fields: null };
 
-    const { decision, confidence, reasons, ...fields } = await ask(RESUME_EXTRACT_SYSTEM, [
-      file,
-      { text: `Skill categories: ${SKILL_CATEGORIES.join(", ")}\nToday's date: ${today()}\n\nCheck this resume and extract the fields.` },
-    ], ResumeExtraction, { maxOutputTokens: 2048 });
+    const { decision, confidence, reasons, ...fields } = await ask(
+      RESUME_EXTRACT_SYSTEM,
+      [
+        file,
+        {
+          text: `Skill categories: ${SKILL_CATEGORIES.join(", ")}\nToday's date: ${today()}\n\nCheck this resume and extract the fields.`,
+        },
+      ],
+      ResumeExtraction,
+      { maxOutputTokens: 2048, signup: options?.signup },
+    );
 
     const verdict = fields.full_name.trim()
       ? { decision, confidence, reasons }
@@ -430,15 +471,26 @@ export const extractResume = async (filePath: string): Promise<ExtractionResult<
   }
 };
 
-export const extractPermit = async (filePath: string, industries: string[]): Promise<ExtractionResult<PermitFields>> => {
+export const extractPermit = async (
+  filePath: string,
+  industries: string[],
+  options?: { signup?: boolean },
+): Promise<ExtractionResult<PermitFields>> => {
   try {
     const file = await fileToPart(filePath);
     if (!file) return { verification: unavailable("Permit file type cannot be read (upload PDF, JPG or PNG)"), fields: null };
 
-    const { decision, confidence, reasons, ...fields } = await ask(PERMIT_EXTRACT_SYSTEM, [
-      file,
-      { text: `Industries: ${industries.join(", ") || "(none yet)"}\nToday's date: ${today()}\n\nCheck this business document and extract the fields.` },
-    ], PermitExtraction, { maxOutputTokens: 2048 });
+    const { decision, confidence, reasons, ...fields } = await ask(
+      PERMIT_EXTRACT_SYSTEM,
+      [
+        file,
+        {
+          text: `Industries: ${industries.join(", ") || "(none yet)"}\nToday's date: ${today()}\n\nCheck this business document and extract the fields.`,
+        },
+      ],
+      PermitExtraction,
+      { maxOutputTokens: 2048, signup: options?.signup },
+    );
 
     const verdict = fields.business_name.trim()
       ? { decision, confidence, reasons }

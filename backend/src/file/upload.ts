@@ -2,6 +2,9 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { Request } from "express";
+import { signupDocumentMaxBytes } from "../config/uploadLimits";
+
+const signupDocumentLimit = signupDocumentMaxBytes();
 
 const profileUploadPath = path.join(process.cwd(), "uploads/profile");
 fs.mkdirSync(profileUploadPath, { recursive: true });
@@ -56,7 +59,7 @@ const storage = multer.diskStorage({
 
 export const uploadFiles = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  limits: { fileSize: signupDocumentLimit },
   fileFilter: (req, file, cb) => {
     const documentTypes = [
       "application/pdf",
@@ -110,7 +113,7 @@ const permitStorage = multer.diskStorage({
 
 export const uploadEmployerPermit = multer({
   storage: permitStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: signupDocumentLimit },
   fileFilter: (req, file, cb) => {
     const imageTypes = [
       "image/jpeg",

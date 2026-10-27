@@ -49,8 +49,8 @@ npm run preview  # serve the built output for a quick test
 
 ### Production deployment
 
-After configuring Nginx as below and pushing the deployment changes to `main`,
-run `bash ./deploy.sh` from the repository root on the server.
+After configuring Nginx as below and pushing to `main`, run `bash ./deploy.sh` from the
+repository root **on the Linux server** (see [DEPLOY.md](../DEPLOY.md) for the full flow).
 
 The production frontend uses same-origin API and Socket.IO URLs by default. Serve
 `dist/` from Nginx and proxy the backend routes to the API on `127.0.0.1:8920`;
@@ -68,6 +68,7 @@ location /api/ {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
 }
 
 location /uploads/ {

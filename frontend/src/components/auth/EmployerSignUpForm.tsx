@@ -217,7 +217,7 @@ const Register = async () => {
       <DocumentScanUpload<PermitFields>
         label="Business Permit / Mayor's Permit *"
         accept="image/jpeg,image/png,application/pdf"
-        helpText="Upload a clear photo, scan or PDF of your Business/Mayor's Permit, DTI, SEC or BIR certificate. Maximum of 5 MB."
+        helpText="Upload a clear photo, scan or PDF of your Business/Mayor's Permit, DTI, SEC or BIR certificate."
         type="image"
         field="permit"
         onVerified={handlePermitVerified}

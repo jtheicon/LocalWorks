@@ -3,7 +3,7 @@ import { WorkerRegister, displayFile, AdminRegister, AdminLogin, EmployerRegiste
 import rateLimit from "express-rate-limit";
 import { uploadEmployerPermit, uploadFiles } from "../file/upload";
 import { createCompany } from "../controller/authentication";
-import { ScanPermit, ScanResume } from "../controller/signupDocument";
+import { PollSignupScan, ScanPermit, ScanResume, SignupUploadLimits } from "../controller/signupDocument";
 
 const router = Router()
 
@@ -38,8 +38,10 @@ router.post("/admin/register", AdminRegister)
 
 
 // Sign-up documents: AI verifies the file and returns the fields to pre-fill the form.
+router.get("/signup/upload-limits", SignupUploadLimits)
 router.post("/signup/resume", documentScanLimiter, ScanResume)
 router.post("/signup/permit", documentScanLimiter, ScanPermit)
+router.get("/signup/scan/:scanId", PollSignupScan)
 
 // Register User:
 router.post("/employer/register", EmployerRegister)

@@ -19,6 +19,7 @@ export interface IEmployer extends Document {
   lastActiveAt?: Date,
   inactivityWarningStage?: number,
   lastInactivityNotificationAt?: Date,
+  inactivityEmailOverride?: string,
   deactivation?: Record<string, unknown> | null,
   createdAt?: Date,
   updatedAt?: Date,

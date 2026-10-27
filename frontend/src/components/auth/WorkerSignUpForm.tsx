@@ -408,7 +408,7 @@ const WorkerSignUpForm = ({ onClose }: WorkerSignUpFormProps) => {
       <DocumentScanUpload<ResumeFields>
         label="CV / Resume *"
         accept=".pdf,.docx"
-        helpText="Upload your CV or resume in PDF or DOCX format. Maximum of 5 MB."
+        helpText="Upload your CV or resume in PDF or DOCX format."
         field="resume"
         onVerified={handleResumeVerified}
         onCleared={() => setDocumentToken("")}

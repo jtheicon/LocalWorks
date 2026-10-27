@@ -331,8 +331,15 @@ export const deactivateInactiveAccounts = async () => {
   return findInactiveAccounts();
 };
 
+/** When false, startup/daily inactivity job is not scheduled (see scheduleAccountCleanup). */
+export const shouldScheduleAccountCleanup = (): boolean => {
+  if (process.env.ACCOUNT_CLEANUP === "off") return false;
+  if (process.env.NODE_ENV !== "production" && process.env.ACCOUNT_CLEANUP !== "on") return false;
+  return true;
+};
+
 export const scheduleAccountCleanup = () => {
-  if (process.env.ACCOUNT_CLEANUP === "off") return;
+  if (!shouldScheduleAccountCleanup()) return;
   const run = () => runInactivityMonitor().catch((err) => console.error("[inactivity] failed:", err));
   setTimeout(run, 60 * 1000);
   setInterval(run, DAY_MS);

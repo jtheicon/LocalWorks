@@ -147,7 +147,8 @@ At 3, 4, and 5 months the account remains operational (`status: active` or `veri
 **Environment** (see [`.env.example`](.env.example)):
 
 - `INACTIVITY_MONTHS` — default `6`
-- `ACCOUNT_CLEANUP=off` — disables the job
+- `ACCOUNT_CLEANUP=off` — disables the job (including in production)
+- Outside production, the job is **off by default**; set `ACCOUNT_CLEANUP=on` only if you intentionally want the daily monitor while developing locally
 - `ALLOW_MANUAL_INACTIVITY_JOB=true` — allows **Run cleanup now** in admin analytics when `NODE_ENV=production`
 - `AWS_*` — when set, deletion removes resume/photo/permit and related uploads from S3
 
@@ -157,11 +158,11 @@ At 3, 4, and 5 months the account remains operational (`status: active` or `veri
 
 ### Inactivity email testing (`seed:inactivity-email-*`)
 
-These commands send real SMTP mail to **`INACTIVITY_LIFECYCLE_INBOX`** (default `joav.zabala.up@phinmaed.com`). The individual 3/4/5-month commands find the unique worker or employer account matching that address, seed it to the requested inactivity stage, and run the real monitor so Admin lifecycle state and the warning stage update on that account. The combined `--run-job` email tour continues to use only `lifecycle-*@localworks-inactivity.test` fixtures. The deletion-only command targets the configured inbox account and permanently deletes it after six months.
+These commands require **`INACTIVITY_LIFECYCLE_INBOX`** in `backend/.env` (no hardcoded fallback): every warning and deletion email is sent to this address. npm scripts use `dotenvx run --overload` so edits to `.env` win over stale PowerShell env vars. For individual 3/4/5-month / deletion seeds, the worker or employer to backdate is **`INACTIVITY_LIFECYCLE_ACCOUNT_EMAIL`** when set, otherwise the inbox address (same as login). Use the split when your worker logs in with one email but you want notifications at another. The combined `--run-job` tour uses only `lifecycle-*@localworks-inactivity.test` fixtures and routes all mail to **`INACTIVITY_LIFECYCLE_INBOX`**. The deletion-only command permanently deletes the selected platform account after six simulated idle months.
 
 This is separate from **`seed:inactivity`**, which seeds broader admin/UI demo accounts.
 
-Configure `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `MONGO_URI` for the intended database, `EMAIL_USER`, `EMAIL_PASS` (Gmail App Password), `EMAIL_OWNER`, and `APP_URL`. Email settings and `APP_URL` are required for email runs. Fixture upserts and the combined `--run-job` tour also need `SEED_DEMO_PASSWORD` (min 8 characters). The individual 3/4/5-month commands additionally require an explicitly configured `INACTIVITY_LIFECYCLE_INBOX` and `SEED_BACKDATE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_BACKDATES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT`. They change that account's `lastActiveAt`, `updatedAt`, warning stage, and notification timestamp to simulate the requested point in the timeline; its platform status remains `active`/`verified` so the account can still sign in during the warning period. These commands abort if the matching account is missing, ambiguous across worker/employer collections, or not operational. The deletion-only command instead requires `SEED_DELETE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_DELETES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT`; do not set it unless you intend to permanently delete and scrub the configured account.
+Configure `INACTIVITY_LIFECYCLE_INBOX`, `SEED_CONFIRM_PRODUCTION=I_UNDERSTAND_THIS_WRITES_TO_PRODUCTION`, `MONGO_URI` for the intended database, `EMAIL_USER`, `EMAIL_PASS` (Gmail App Password), `EMAIL_OWNER`, and `APP_URL`. Email settings and `APP_URL` are required for email runs. Fixture upserts and the combined `--run-job` tour also need `SEED_DEMO_PASSWORD` (min 8 characters). The individual 3/4/5-month commands additionally require `SEED_BACKDATE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_BACKDATES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT`. They change that account's `lastActiveAt`, `updatedAt`, warning stage, and notification timestamp to simulate the requested point in the timeline; its platform status remains `active`/`verified` so the account can still sign in during the warning period. These commands abort if the matching account is missing, ambiguous across worker/employer collections, or not operational. The deletion-only command instead requires `SEED_DELETE_LIFECYCLE_INBOX=I_UNDERSTAND_THIS_DELETES_THE_CONFIGURED_LIFECYCLE_INBOX_ACCOUNT`; do not set it unless you intend to permanently delete and scrub the configured account.
 
 | Goal | Command |
 |------|---------|
